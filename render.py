@@ -80,6 +80,17 @@ def _radial_glow(radius, color, max_alpha):
     return _glow_cache[key]
 
 
+def _dim(alpha):
+    """Cached full-screen dark-green dim layer (one per alpha in use)."""
+    key = ("dim", alpha)
+    if key not in _glow_cache:
+        surf = pygame.Surface((settings.WINDOW_W, settings.WINDOW_H),
+                              pygame.SRCALPHA)
+        surf.fill((16, 20, 12, alpha))
+        _glow_cache[key] = surf
+    return _glow_cache[key]
+
+
 def _soft_shadow(w, h, alpha=80):
     """A soft blurred rectangular shadow (cached), for grounding structures."""
     key = ("shadow", w, h, alpha)
@@ -617,9 +628,7 @@ def _render_menu(display):
     """Controls overlay: dims the paused scene, lists every binding."""
     font, font_small, font_big = _fonts()
 
-    dim = pygame.Surface((settings.WINDOW_W, settings.WINDOW_H), pygame.SRCALPHA)
-    dim.fill((16, 20, 12, 160))
-    display.blit(dim, (0, 0))
+    display.blit(_dim(160), (0, 0))
 
     box = pygame.Rect(0, 0, 540, 396)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
@@ -674,9 +683,7 @@ def _render_main_menu(display, game_state):
     muted = pygame.Color("#b3ac97")
     gold = pygame.Color(settings.YELLOW)
 
-    dim = pygame.Surface((settings.WINDOW_W, settings.WINDOW_H), pygame.SRCALPHA)
-    dim.fill((16, 20, 12, 90))
-    display.blit(dim, (0, 0))
+    display.blit(_dim(90), (0, 0))
 
     title = font_big.render("AFL PROTOTYPE", True, cream)
     display.blit(title, (settings.WINDOW_W // 2 - title.get_width() // 2, 140))
@@ -719,9 +726,7 @@ def _render_end(display, game_state):
     cream = pygame.Color(settings.CREAM)
     muted = pygame.Color("#b3ac97")
 
-    dim = pygame.Surface((settings.WINDOW_W, settings.WINDOW_H), pygame.SRCALPHA)
-    dim.fill((16, 20, 12, 150))
-    display.blit(dim, (0, 0))
+    display.blit(_dim(150), (0, 0))
 
     box = pygame.Rect(0, 0, 560, 260)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)

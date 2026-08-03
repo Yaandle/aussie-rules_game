@@ -69,6 +69,7 @@ class HeroState:
 
         self.drag_button = None       # active mouse button while drawing
         self.drag_points = []         # unprojected field points of the drag
+        self.show_menu = False        # controls overlay (pauses the level)
         self.message = ""
         self.message_timer = 0.0
 
@@ -98,13 +99,20 @@ class HeroState:
             return
 
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                if self.drag_button is not None:
+            if event.key == pygame.K_m:
+                self._cancel_drag()
+                self.show_menu = not self.show_menu
+            elif event.key == pygame.K_ESCAPE:
+                if self.show_menu:
+                    self.show_menu = False
+                elif self.drag_button is not None:
                     self._cancel_drag()
                 else:
                     self.exit_request = "menu"
-            elif event.key == pygame.K_r:
+            elif event.key == pygame.K_r and not self.show_menu:
                 self._load()
+            return
+        if self.show_menu:
             return
 
         if event.type == pygame.MOUSEBUTTONDOWN and \
@@ -129,16 +137,34 @@ class HeroState:
             self.exit_request = "next"
 
     def _begin_drag(self, button, screen_pos):
-        """A drag only arms if it starts on (near) the ball carrier."""
+        """A drag arms if it starts on the carrier — tested against the
+        drawn sprite in screen space, since the sprite stands up from its
+        feet and a click on the body unprojects to ground well behind it."""
         carrier = self.carrier
         if carrier is None or self.mode not in (HS_DECIDE, HS_RUN):
             return
-        pt = self.camera.unproject(*screen_pos)
-        if pt is None:
+        if not self._on_carrier(carrier, screen_pos):
+            if self.mode == HS_DECIDE:
+                self._show_message("DRAG FROM YOUR PLAYER")
+                self.message_timer = 1.2
             return
-        if carrier.distance_to(pt) <= settings.HERO_GRAB_RADIUS:
-            self.drag_button = button
-            self.drag_points = [pt]
+        self.drag_button = button
+        self.drag_points = [carrier.pos]
+
+    def _on_carrier(self, carrier, screen_pos):
+        """True when a screen point sits on the carrier's billboard sprite
+        (with margin), or on the ground within HERO_GRAB_RADIUS of him."""
+        proj = self.camera.project(carrier.x, carrier.y, 0.0)
+        if proj is not None:
+            sx, sy, scale, _ = proj
+            h = 4.0 * settings.HERO_SPRITE_SCALE * scale   # sprite height px
+            half_w = max(30.0, h * 0.6)
+            if (abs(screen_pos[0] - sx) <= half_w
+                    and sy - h * 1.4 <= screen_pos[1] <= sy + h * 0.4):
+                return True
+        pt = self.camera.unproject(*screen_pos)
+        return (pt is not None
+                and carrier.distance_to(pt) <= settings.HERO_GRAB_RADIUS)
 
     def _cancel_drag(self):
         self.drag_button = None
@@ -258,6 +284,8 @@ class HeroState:
 
         if self.mode == HS_DONE:
             self.camera.update(dt, (self.camera.fx, self.camera.fz), False)
+            return
+        if self.show_menu:            # controls overlay pauses the level
             return
 
         world_dt = dt * (settings.HERO_SLOWMO if self.in_decision else 1.0)

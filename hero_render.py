@@ -21,8 +21,31 @@ from hero_state import HS_DONE, HS_RUN
 # ── Module-level caches ─────────────────────────────────────────────
 _sprite_cache = {}      # (team, walking, frame) → 7x12 Surface
 _shadow_cache = {}      # (w, h) → soft ellipse Surface
+_scaled_cache = {}      # (key, w, h) → nearest-neighbor scaled Surface
+_text_cache = {}        # (font, text, color) → rendered text Surface
 _tree_sprite = None
 _ball_sprite = None
+
+
+def _text(kind, text, color):
+    """Cached font rendering ("f" normal, "s" small, "b" big) — HUD text
+    is nearly static, so re-rendering it every frame was pure waste."""
+    key = (kind, text, str(color))
+    if key not in _text_cache:
+        font, font_small, font_big = render._fonts()
+        chosen = {"f": font, "s": font_small, "b": font_big}[kind]
+        _text_cache[key] = chosen.render(text, True, color)
+    return _text_cache[key]
+
+
+def _scaled(base, w, h, key):
+    """Nearest-neighbor scale with a bucketed cache (per-frame scaling of
+    every billboard was the renderer's main per-frame cost)."""
+    w, h = max(2, w // 2 * 2), max(2, h // 2 * 2)
+    ck = (key, w, h)
+    if ck not in _scaled_cache:
+        _scaled_cache[ck] = pygame.transform.scale(base, (w, h))
+    return _scaled_cache[ck]
 
 
 # ── Cached mini-sprites ─────────────────────────────────────────────
@@ -146,10 +169,9 @@ def _render_ground(display, cam):
         if p is None:
             continue
         k = max(p[2] * 0.55, 0.5)
-        w, h = int(13 * k), int(12 * k)
-        if w > 0 and h > 0:
-            img = pygame.transform.scale(tree_sprite, (w, h))
-            display.blit(img, (int(p[0]) - w // 2, int(p[1]) - h))
+        img = _scaled(tree_sprite, int(13 * k), int(12 * k), "tree")
+        display.blit(img, (int(p[0]) - img.get_width() // 2,
+                           int(p[1]) - img.get_height()))
 
     # The oval: mown stripe bands as flat-shaded projected polygons.
     cx, cy = settings.FIELD_CX, settings.FIELD_CY
@@ -263,8 +285,9 @@ def _entity_drawables(cam, state):
         w, h = max(3, int(7 * k)), max(5, int(12 * k))
         walking = p in moving
         bob = 0 if walking else int(k) * (((ticks // 600) + idx) % 2)
-        sprite = pygame.transform.scale(_player_sprite(p.team, walking,
-                                                       walk_frame), (w, h))
+        sprite = _scaled(_player_sprite(p.team, walking, walk_frame),
+                         w, h, ("player", p.team, walking, walk_frame))
+        w, h = sprite.get_size()
         shadow = _soft_ellipse_shadow(max(4, int(w * 1.1)), max(2, int(w * 0.4)))
         is_carrier = p.is_ball_carrier
 
@@ -295,7 +318,7 @@ def _entity_drawables(cam, state):
     if proj is not None:
         sx, sy, scale, depth = proj
         w = max(3, int(scale * 0.9))
-        img = pygame.transform.scale(_ball(), (w, max(2, int(w * 0.66))))
+        img = _scaled(_ball(), w, max(2, int(w * 0.66)), "ball")
 
         def draw_ball(display, sx=sx, sy=sy, img=img, ground=ground,
                       lift=lift, scale=scale):
@@ -320,6 +343,11 @@ def _render_decision(display, cam, state):
         return
     line = pygame.Color(settings.LINE)
     gold = pygame.Color(settings.YELLOW)
+
+    # A gentle pulsing ring under the carrier: "draw from here".
+    pulse = 2.3 + 0.4 * math.sin(pygame.time.get_ticks() * 0.004)
+    _proj_line(display, cam, _circle_pts(carrier.x, carrier.y, pulse, n=18),
+               gold, width=2)
 
     # Soft rings under reachable teammates: the field of options.
     for t in state.teammates:
@@ -379,16 +407,14 @@ _OBJECTIVE_TEXT = {
 
 def _render_hud(display, state):
     """Charcoal chips: level, clock, controls, pressure, messages."""
-    font, font_small, _ = render._fonts()
     cream = pygame.Color(settings.CREAM)
     muted = pygame.Color("#b3ac97")
     charcoal = pygame.Color(settings.UI_CHARCOAL)
     ink = pygame.Color(settings.INK)
 
     # Level chip, top center.
-    name = font_small.render(state.level["name"], True, cream)
-    obj = font_small.render(_OBJECTIVE_TEXT[state.level["objective"]],
-                            True, muted)
+    name = _text("s", state.level["name"], cream)
+    obj = _text("s", _OBJECTIVE_TEXT[state.level["objective"]], muted)
     w = max(name.get_width(), obj.get_width()) + 28
     chip = pygame.Rect(0, 0, w, 52)
     chip.midtop = (settings.WINDOW_W // 2, 20)
@@ -400,15 +426,14 @@ def _render_hud(display, state):
     # Clock chip, top left — red inside the final ten seconds.
     m, s = divmod(int(state.timer), 60)
     col = pygame.Color(settings.ACCENT_RED) if state.timer < 10 else cream
-    clock = font.render(f"{m:01d}:{s:02d}", True, col)
+    clock = _text("f", f"{m:01d}:{s:02d}", col)
     box = pygame.Rect(24, 24, clock.get_width() + 28, 36)
     pygame.draw.rect(display, charcoal, box)
     pygame.draw.rect(display, ink, box, 2)
     display.blit(clock, (box.x + 14, box.y + 7))
 
     # Controls hint, bottom left.
-    hint = font_small.render("L-DRAG KICK · R-DRAG RUN · ESC BACK",
-                             True, cream)
+    hint = _text("s", "M · CONTROLS", cream)
     chip = pygame.Rect(24, settings.WINDOW_H - 56, hint.get_width() + 28, 32)
     pygame.draw.rect(display, charcoal, chip)
     pygame.draw.rect(display, ink, chip, 2)
@@ -428,12 +453,47 @@ def _render_hud(display, state):
 
     # Event message, bottom center.
     if state.message:
-        text = font.render(state.message, True, cream)
+        text = _text("f", state.message, cream)
         rect = pygame.Rect(0, 0, text.get_width() + 32, 40)
         rect.center = (settings.WINDOW_W // 2, settings.WINDOW_H - 100)
         pygame.draw.rect(display, charcoal, rect)
         pygame.draw.rect(display, ink, rect, 3)
         display.blit(text, (rect.x + 16, rect.y + 9))
+
+
+def _render_controls(display):
+    """Controls overlay: dims the paused level, lists the swipe bindings."""
+    font, font_small, font_big = render._fonts()
+    display.blit(render._dim(160), (0, 0))
+
+    box = pygame.Rect(0, 0, 560, 360)
+    box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
+    shadow = render._soft_shadow(box.w, box.h)
+    display.blit(shadow, (box.x - (shadow.get_width() - box.w) // 2,
+                          box.y - (shadow.get_height() - box.h) // 2 + 6))
+    pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), box)
+    pygame.draw.rect(display, pygame.Color(settings.INK), box, 3)
+
+    title = font_big.render("CONTROLS", True, pygame.Color(settings.CREAM))
+    display.blit(title, (box.centerx - title.get_width() // 2, box.y + 22))
+
+    rows = (("L-DRAG LONG", "KICK — BEND THE SWIPE TO CURL"),
+            ("L-DRAG SHORT", "HANDBALL TO A TEAMMATE"),
+            ("R-DRAG", "DRAW A RUN PATH"),
+            ("ESC", "CANCEL DRAG / BACK"),
+            ("R", "RETRY LEVEL"),
+            ("M", "OPEN · CLOSE THIS MENU"))
+    muted = pygame.Color("#b3ac97")
+    for i, (key, action) in enumerate(rows):
+        y = box.y + 76 + i * 38
+        display.blit(font.render(key, True, pygame.Color(settings.YELLOW)),
+                     (box.x + 36, y))
+        display.blit(font.render(action, True, muted), (box.x + 230, y))
+
+    footer = font_small.render("EVERY DRAG STARTS ON YOUR PLAYER  ·  GAME PAUSED",
+                               True, muted)
+    display.blit(footer, (box.centerx - footer.get_width() // 2,
+                          box.bottom - 40))
 
 
 def _render_done(display, state):
@@ -442,9 +502,7 @@ def _render_done(display, state):
     cream = pygame.Color(settings.CREAM)
     muted = pygame.Color("#b3ac97")
 
-    dim = pygame.Surface((settings.WINDOW_W, settings.WINDOW_H), pygame.SRCALPHA)
-    dim.fill((16, 20, 12, 150))
-    display.blit(dim, (0, 0))
+    display.blit(render._dim(150), (0, 0))
 
     box = pygame.Rect(0, 0, 560, 260)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
@@ -497,3 +555,5 @@ def render_hero(display, state):
 
     if state.mode == HS_DONE:
         _render_done(display, state)
+    elif state.show_menu:
+        _render_controls(display)
