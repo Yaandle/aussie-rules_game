@@ -109,6 +109,18 @@ HERO_CAM_LERP   = 3.0    # focus/zoom smoothing rate (per second)
 HERO_HORIZON_Y  = 0.40   # screen-height fraction where the look-at point sits
 HERO_SPRITE_SCALE = 1.15 # world-size multiplier for billboarded sprites
 
+# ── FULL GAME / SCENARIOS: camera (broadcast-style, distinct from Hero) ──
+# Same rig as AFL Hero's, tuned slightly differently so the two modes read
+# as different views: a touch higher/steeper (more vertical), slower to
+# ease toward the play (reads as more fixed), and a little further back
+# (mildly zoomed out) to keep more of the field in frame.
+MAIN_CAM_BACK   = 50.0   # a bit further back than Hero's 46.0
+MAIN_CAM_HEIGHT = 30.0   # higher than Hero's 24.0 -> steeper, more vertical look
+MAIN_CAM_FOCAL  = 500.0  # slightly wider than Hero's 520.0 -> mild zoom out
+MAIN_CAM_ZOOM   = 1.20   # gentler zoom-in while aiming a kick than Hero's 1.35
+MAIN_CAM_LERP   = 1.8    # slower ease than Hero's 3.0 -> camera feels more fixed
+MAIN_HORIZON_Y  = 0.40   # unchanged
+
 # ── AFL Hero mode: decision & swipe tuning ──────────────────────────
 HERO_SLOWMO       = 0.12  # deep time dilation while deciding
 HERO_GRAB_RADIUS  = 10.0  # a drag must begin this close to the carrier

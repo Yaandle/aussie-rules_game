@@ -19,21 +19,34 @@ import settings
 
 
 class HeroCamera:
-    """Smoothed follow-camera with project/unproject onto the ground plane."""
+    """Smoothed follow-camera with project/unproject onto the ground plane.
 
-    def __init__(self, focus):
+    Defaults match the AFL Hero diorama camera. FULL GAME / SCENARIOS pass
+    their own `settings.MAIN_CAM_*` values (see game_state.py) to get a
+    slightly more vertical, more fixed "broadcast" feel without touching
+    Hero mode at all.
+    """
+
+    def __init__(self, focus, back=None, height=None, focal=None,
+                 zoom_mult=None, lerp=None, horizon_y=None):
         self.fx, self.fz = float(focus[0]), float(focus[1])
         self.zoom = 1.0
+        self._back = settings.HERO_CAM_BACK if back is None else back
+        self._height = settings.HERO_CAM_HEIGHT if height is None else height
+        self._focal_base = settings.HERO_CAM_FOCAL if focal is None else focal
+        self._zoom_mult = settings.HERO_CAM_ZOOM if zoom_mult is None else zoom_mult
+        self._lerp = settings.HERO_CAM_LERP if lerp is None else lerp
+        self._horizon_y = settings.HERO_HORIZON_Y if horizon_y is None else horizon_y
         self._rebuild()
 
     # ── Per-frame state ─────────────────────────────────────────────
 
     def update(self, dt, focus, zooming):
         """Ease the camera toward a new focus point and zoom level."""
-        k = min(1.0, settings.HERO_CAM_LERP * dt)
+        k = min(1.0, self._lerp * dt)
         self.fx += (focus[0] - self.fx) * k
         self.fz += (focus[1] - self.fz) * k
-        target_zoom = settings.HERO_CAM_ZOOM if zooming else 1.0
+        target_zoom = self._zoom_mult if zooming else 1.0
         self.zoom += (target_zoom - self.zoom) * k
         self._rebuild()
 
@@ -41,19 +54,19 @@ class HeroCamera:
         """Recompute the camera basis from the current focus."""
         # Camera position: behind the focus (south, +z) and up.
         self.cx = self.fx
-        self.cy = settings.HERO_CAM_HEIGHT
-        self.cz = self.fz + settings.HERO_CAM_BACK
+        self.cy = self._height
+        self.cz = self.fz + self._back
 
         # Forward vector: from camera toward the focus at waist height.
-        fwd = (0.0, 1.0 - self.cy, -settings.HERO_CAM_BACK)
+        fwd = (0.0, 1.0 - self.cy, -self._back)
         length = math.sqrt(fwd[1] ** 2 + fwd[2] ** 2)
         self.f = (0.0, fwd[1] / length, fwd[2] / length)
         # Right is world +x (no yaw/roll); up completes the basis.
         self.r = (1.0, 0.0, 0.0)
         self.u = (0.0, -self.f[2], self.f[1])
 
-        self.focal = settings.HERO_CAM_FOCAL * self.zoom
-        self.horizon_px = settings.WINDOW_H * settings.HERO_HORIZON_Y
+        self.focal = self._focal_base * self.zoom
+        self.horizon_px = settings.WINDOW_H * self._horizon_y
 
     # ── Projection ──────────────────────────────────────────────────
 

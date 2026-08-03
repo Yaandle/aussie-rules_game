@@ -16,6 +16,7 @@ import levels
 import mechanics
 import settings
 from entities import Ball, Player
+from hero_camera import HeroCamera
 from hero_state import HeroState
 
 # Input modes (while playing)
@@ -79,6 +80,18 @@ class GameState:
         carrier.is_ball_carrier = True
         self.ball = Ball(carrier.x, carrier.y)
         self.ball.give_to(carrier)
+        # Both classic modes share AFL Hero's diorama presentation, but use
+        # their own camera tuning (settings.MAIN_CAM_*) for a slightly more
+        # vertical, more fixed "broadcast" feel that differs from Hero mode.
+        self.camera = HeroCamera(
+            carrier.pos,
+            back=settings.MAIN_CAM_BACK,
+            height=settings.MAIN_CAM_HEIGHT,
+            focal=settings.MAIN_CAM_FOCAL,
+            zoom_mult=settings.MAIN_CAM_ZOOM,
+            lerp=settings.MAIN_CAM_LERP,
+            horizon_y=settings.MAIN_HORIZON_Y,
+        )
 
         self.mode = MODE_IDLE
         self.run_since_bounce = 0.0
@@ -266,11 +279,14 @@ class GameState:
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.mode == MODE_AIMING_KICK and not self.show_menu:
-                self._attempt_kick(self._mouse_to_logical(event.pos))
+                target = self._mouse_to_logical(event.pos)
+                if target is not None:
+                    self._attempt_kick(target)
 
     def _mouse_to_logical(self, screen_pos):
-        """Convert a window click to logical-grid coordinates."""
-        return (screen_pos[0] / settings.SCALE, screen_pos[1] / settings.SCALE)
+        """Unproject a window click through the diorama camera onto the
+        field's ground plane. None when the click is above the horizon."""
+        return self.camera.unproject(*screen_pos)
 
     # ── Actions ─────────────────────────────────────────────────────
 
@@ -344,7 +360,9 @@ class GameState:
             return
 
         # Slow-motion decision mode: the whole world breathes slower
-        # while a kick is being lined up.
+        # while a kick is being lined up. The camera keeps real time so
+        # its follow and zoom stay smooth through the dilation.
+        raw_dt = dt
         if self.mode == MODE_AIMING_KICK:
             dt *= settings.SLOWMO_FACTOR
 
@@ -376,6 +394,10 @@ class GameState:
             self.aim_point = self._mouse_to_logical(pygame.mouse.get_pos())
         else:
             self.aim_point = None
+
+        focus = (self.ball.pos if self.ball.in_flight
+                 else (carrier.pos if carrier else self.ball.pos))
+        self.camera.update(raw_dt, focus, self.mode == MODE_AIMING_KICK)
 
         # Decay transient visual timers (real time, not slowed).
         if self.flash is not None:
