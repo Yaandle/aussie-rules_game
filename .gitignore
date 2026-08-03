@@ -1,0 +1,30 @@
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ── Virtual environments ─────────────────────────────────────────
+aussie-rule_venv/
+venv/
+env/
+.venv/
+
+# ── Packaging / build ────────────────────────────────────────────
+build/
+dist/
+*.egg-info/
+
+# ── Test / coverage ──────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Editors / IDEs ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ── OS cruft ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
