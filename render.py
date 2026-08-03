@@ -20,8 +20,7 @@ import pygame
 import hero_levels
 import levels
 import settings
-from game_state import (MODE_AIMING_KICK, PHASE_END, PHASE_MENU,
-                        ROOT_OPTIONS, SCREEN_HERO, SCREEN_ROOT)
+from game_state import ROOT_OPTIONS, SCREEN_HERO, SCREEN_ROOT
 
 # ── Module-level caches (built lazily, once) ────────────────────────
 _bg_scaled = None
@@ -63,21 +62,6 @@ def _darken(color, f):
     """Blend a color toward black by factor f (0..1)."""
     c = pygame.Color(color)
     return (int(c.r * (1 - f)), int(c.g * (1 - f)), int(c.b * (1 - f)))
-
-
-def _radial_glow(radius, color, max_alpha):
-    """A soft radial glow surface (cached). Built small, smoothscaled up."""
-    key = (radius, color, max_alpha)
-    if key not in _glow_cache:
-        small = 24
-        surf = pygame.Surface((small * 2, small * 2), pygame.SRCALPHA)
-        c = pygame.Color(color)
-        for i in range(small, 0, -1):
-            t = i / small                      # 1.0 at edge → 0.0 at center
-            alpha = int(max_alpha * (1.0 - t) ** 2)
-            pygame.draw.circle(surf, (c.r, c.g, c.b, alpha), (small, small), i)
-        _glow_cache[key] = pygame.transform.smoothscale(surf, (radius * 2, radius * 2))
-    return _glow_cache[key]
 
 
 def _dim(alpha):
@@ -138,12 +122,6 @@ def _haze():
         _haze_overlay = pygame.transform.smoothscale(
             col, (settings.WINDOW_W, settings.WINDOW_H))
     return _haze_overlay
-
-
-def _to_screen(logical_point):
-    """Logical grid coords → window pixel coords."""
-    return (int(logical_point[0] * settings.SCALE),
-            int(logical_point[1] * settings.SCALE))
 
 
 def _inside_oval(x, y, inflate=0.0):
@@ -437,192 +415,7 @@ def _draw_player_sprite(surface, x, y, team, walking, walk_frame):
         surface.set_at((x + 1, y + 5), boot)
 
 
-def render_players(surface, players, carrier_moving=False):
-    """All sprites with soft grounded shadows and a gentle idle bob.
-
-    Shadows never bob with the body — that offset sells the faux depth.
-    """
-    ticks = pygame.time.get_ticks()
-    walk_frame = (ticks // 160) % 2
-    for idx, p in enumerate(players):
-        x, y = int(p.x), int(p.y)
-        # Soft shadow pooled at the feet, nudged right like the reference.
-        pygame.draw.ellipse(surface, (40, 52, 30, 70), (x - 2, y + 5, 8, 3))
-
-        walking = carrier_moving and p.is_ball_carrier
-        bob = 0 if walking else ((ticks // 600) + idx) % 2
-        _draw_player_sprite(surface, x, y - bob, p.team, walking, walk_frame)
-
-
-def render_ball(surface, ball):
-    """The football: a 2x2 leather-brown square with a parabolic flight arc.
-
-    In the air the ball lifts off its shadow — the widening gap between
-    the two is the whole depth illusion.
-    """
-    if ball.possessed_by is not None:
-        x, y = int(ball.possessed_by.x) + 4, int(ball.possessed_by.y) + 1
-    else:
-        x, y = int(ball.x), int(ball.y)
-        if ball.in_flight:
-            t = ball.flight_progress
-            lift = int(math.sin(math.pi * t) *
-                       min(ball.flight_distance / 8.0, 6.0))
-            pygame.draw.ellipse(surface, (40, 52, 30, 70), (x - 1, y, 4, 2))
-            y -= lift
-    pygame.draw.rect(surface, pygame.Color(settings.BALL_BROWN), (x, y - 1, 2, 2))
-    surface.set_at((x, y - 1), pygame.Color(_lighten(settings.BALL_BROWN, 0.35)))
-
-
-def _render_carrier_arrow(surface, game_state):
-    """Small soft-white triangle hovering (and bobbing) above the carrier."""
-    carrier = game_state.carrier
-    if carrier is None:
-        return
-    x, y = int(carrier.x), int(carrier.y) - 10
-    y -= (pygame.time.get_ticks() // 400) % 2   # gentle 2-frame hover
-    col = pygame.Color(settings.LINE)
-    pygame.draw.line(surface, col, (x - 1, y - 1), (x + 1, y - 1))
-    surface.set_at((x, y), col)
-
-
-def _render_aim(surface, game_state):
-    """Decision-mode overlay: passing-lane rings, aim line, target cross."""
-    carrier, aim = game_state.carrier, game_state.aim_point
-    if carrier is None or aim is None:
-        return
-
-    # Passing lanes: a soft ring under every reachable teammate.
-    for t in game_state.teammates:
-        if t is carrier:
-            continue
-        if t.distance_to(carrier.pos) <= settings.KICK_MAX_RANGE:
-            pygame.draw.ellipse(surface, pygame.Color(settings.LINE),
-                                (int(t.x) - 4, int(t.y) + 4, 9, 4), 1)
-
-    cx, cy = carrier.x, carrier.y
-    dx, dy = aim[0] - cx, aim[1] - cy
-    dist = max((dx * dx + dy * dy) ** 0.5, 0.001)
-    for i in range(1, int(dist // 3) + 1):
-        t = (i * 3) / dist
-        surface.set_at((int(cx + dx * t), int(cy + dy * t)),
-                       pygame.Color(settings.LINE))
-    ax, ay = int(aim[0]), int(aim[1])
-    pygame.draw.line(surface, settings.LINE, (ax - 2, ay), (ax + 2, ay))
-    pygame.draw.line(surface, settings.LINE, (ax, ay - 2), (ax, ay + 2))
-
-
-def _render_bounce_tick(surface, game_state):
-    """Small cream tick beside the carrier just after a bounce."""
-    carrier = game_state.carrier
-    if carrier is None or game_state.bounce_tick_timer <= 0:
-        return
-    x, y = int(carrier.x) - 8, int(carrier.y) + 3
-    col = pygame.Color(settings.CREAM)
-    pygame.draw.line(surface, col, (x, y), (x + 1, y + 1))
-    pygame.draw.line(surface, col, (x + 1, y + 1), (x + 3, y - 2))
-
-
 # ── Scoreboards & HUD (display resolution) ──────────────────────────
-
-def _standing_board(display, rect, draw_content):
-    """A physical scoreboard: legs, roof cap, charcoal face, soft shadow.
-
-    draw_content(rect) paints the face; the frame is shared by both boards.
-    """
-    roof_col = pygame.Color(settings.INK)
-    # Ground shadow, then legs (behind the face), then roof, then face.
-    shadow = _soft_shadow(rect.w, 14, alpha=60)
-    display.blit(shadow, (rect.x - (shadow.get_width() - rect.w) // 2,
-                          rect.bottom + 10))
-    pygame.draw.rect(display, roof_col, (rect.x + 22, rect.bottom, 8, 18))
-    pygame.draw.rect(display, roof_col, (rect.right - 30, rect.bottom, 8, 18))
-    pygame.draw.rect(display, roof_col, (rect.x - 6, rect.y - 10, rect.w + 12, 10))
-    pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), rect)
-    pygame.draw.rect(display, roof_col, rect, 3)
-    draw_content(rect)
-
-
-def render_hud(display, game_state):
-    """In-world scoreboards, hint chip, pressure bar, warnings, messages."""
-    font, font_small, _ = _fonts()
-    cream = pygame.Color(settings.CREAM)
-
-    # Left board: HOME / AWAY score with the clock beneath. The clock
-    # turns red for the last ten seconds of a scenario.
-    def left_face(rect):
-        display.blit(font.render("HOME  AWAY", True, cream), (rect.x + 16, rect.y + 10))
-        display.blit(font.render(f" {game_state.yellow_points:02d}    00", True, cream),
-                     (rect.x + 16, rect.y + 34))
-        m, s = divmod(int(game_state.timer), 60)
-        urgent = game_state.game_mode == "scenario" and game_state.timer < 10
-        clock_col = pygame.Color(settings.ACCENT_RED) if urgent else cream
-        label = "TIME" if game_state.game_mode == "scenario" else "Q1"
-        clock = font_small.render(f"{label}  {m:01d}:{s:02d}", True, clock_col)
-        display.blit(clock, (rect.centerx - clock.get_width() // 2, rect.y + 60))
-
-    _standing_board(display, pygame.Rect(28, 24, 214, 84), left_face)
-
-    # Right board: the motivational list with its little red dot.
-    def right_face(rect):
-        for i, word in enumerate(("FOCUS", "DISCIPLINE", "GROWTH")):
-            display.blit(font_small.render(word, True, cream),
-                         (rect.x + 16, rect.y + 12 + i * 22))
-        pygame.draw.circle(display, pygame.Color(settings.ACCENT_RED),
-                           (rect.right - 16, rect.y + 16), 5)
-
-    _standing_board(display,
-                    pygame.Rect(settings.WINDOW_W - 216, 24, 188, 84), right_face)
-
-    # Scenario chip — mission name and objective, top center.
-    if game_state.game_mode == "scenario" and game_state.scenario is not None:
-        name = font_small.render(game_state.scenario["name"], True, cream)
-        tag = font_small.render(game_state.scenario["tagline"], True,
-                                pygame.Color("#b3ac97"))
-        w = max(name.get_width(), tag.get_width()) + 28
-        chip = pygame.Rect(0, 0, w, 52)
-        chip.midtop = (settings.WINDOW_W // 2, 20)
-        pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), chip)
-        pygame.draw.rect(display, pygame.Color(settings.INK), chip, 2)
-        display.blit(name, (chip.centerx - name.get_width() // 2, chip.y + 8))
-        display.blit(tag, (chip.centerx - tag.get_width() // 2, chip.y + 28))
-
-    # Controls hint chip — bottom-left, hidden while the menu is open.
-    if not game_state.show_menu:
-        chip = pygame.Rect(24, settings.WINDOW_H - 56, 172, 32)
-        pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), chip)
-        pygame.draw.rect(display, pygame.Color(settings.INK), chip, 2)
-        display.blit(font_small.render("M · CONTROLS", True, cream),
-                     (chip.x + 14, chip.y + 8))
-
-    # Pressure indicator — only while lining up a kick.
-    carrier = game_state.carrier
-    if carrier is not None and game_state.mode == MODE_AIMING_KICK:
-        px, py = _to_screen(carrier.pos)
-        bar = pygame.Rect(px - 30, py - 66, 60, 10)
-        pygame.draw.rect(display, cream, bar)
-        fill_w = int((bar.w - 4) * game_state.pressure)
-        pygame.draw.rect(display, pygame.Color(settings.ACCENT_RED),
-                         (bar.x + 2, bar.y + 2, fill_w, bar.h - 4))
-        pygame.draw.rect(display, pygame.Color(settings.INK), bar, 2)
-        tag = font_small.render("PRESSURE", True, pygame.Color(settings.UI_CHARCOAL))
-        display.blit(tag, (bar.centerx - tag.get_width() // 2, bar.y - 18))
-
-    # Bounce warning — the carrier has run too far without bouncing.
-    if carrier is not None and game_state.must_bounce and not game_state.game_over:
-        px, py = _to_screen(carrier.pos)
-        warn = font_small.render("BOUNCE!", True, pygame.Color(settings.ACCENT_RED))
-        display.blit(warn, (px - warn.get_width() // 2, py + 46))
-
-    # Event message — bottom center, simple charcoal plate.
-    if game_state.message:
-        text = font.render(game_state.message, True, cream)
-        rect = pygame.Rect(0, 0, text.get_width() + 32, 40)
-        rect.center = (settings.WINDOW_W // 2, settings.WINDOW_H - 48)
-        pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), rect)
-        pygame.draw.rect(display, pygame.Color(settings.INK), rect, 3)
-        display.blit(text, (rect.x + 16, rect.y + 9))
-
 
 def _render_menu(display):
     """Controls overlay: dims the paused scene, lists every binding."""
@@ -760,18 +553,6 @@ def _render_end(display, game_state):
     display.blit(tip, (box.centerx - tip.get_width() // 2, box.bottom - 52))
 
 
-# ── Ambient light (soft, display resolution) ────────────────────────
-
-def _render_carrier_ambience(display, game_state):
-    """A restrained pale glow pooling around the ball-carrier only."""
-    carrier = game_state.carrier
-    if carrier is None:
-        return
-    px, py = _to_screen(carrier.pos)
-    glow = _radial_glow(60, settings.YELLOW, 28)
-    display.blit(glow, glow.get_rect(center=(px, py)))
-
-
 def _render_flash(display, game_state):
     """Full-screen score flash: warm gold for goals, faint cream for behinds."""
     if game_state.flash is None:
@@ -787,44 +568,11 @@ def _render_flash(display, game_state):
 # ── Master compose ──────────────────────────────────────────────────
 
 def render(display, game_state):
-    """One frame, dispatched by phase: menu, or play/end pipeline."""
-    if game_state.phase == PHASE_MENU:
-        display.blit(_background(), (0, 0))
-        display.blit(_haze(), (0, 0))
-        display.blit(_build_vignette(), (0, 0))
-        _render_main_menu(display, game_state)
-        return
-
+    """Render the main menu. FULL GAME / SCENARIOS / AFL HERO frames are
+    drawn by field_render.py and hero_render.py instead (see main.py's
+    phase dispatch); this module supplies their shared display-resolution
+    overlays (haze, vignette, slow-mo, controls menu, end screen)."""
     display.blit(_background(), (0, 0))
-    _render_carrier_ambience(display, game_state)
-
-    # Entity layer — players, ball, aim line, tick, selection arrow.
-    entity_layer = pygame.Surface((settings.LOGICAL_W, settings.LOGICAL_H),
-                                  pygame.SRCALPHA)
-    if game_state.mode == MODE_AIMING_KICK:
-        _render_aim(entity_layer, game_state)
-    render_players(entity_layer, game_state.players, game_state.carrier_moving)
-    render_ball(entity_layer, game_state.ball)
-    _render_bounce_tick(entity_layer, game_state)
-    _render_carrier_arrow(entity_layer, game_state)
-    display.blit(pygame.transform.scale(
-        entity_layer, (settings.WINDOW_W, settings.WINDOW_H)), (0, 0))
-
-    # Atmosphere: misty top-of-frame haze, then a soft central bloom.
     display.blit(_haze(), (0, 0))
-    bloom = _radial_glow(int(settings.WINDOW_W * 0.4), settings.CREAM, 20)
-    display.blit(bloom, bloom.get_rect(
-        center=(settings.WINDOW_W // 2, settings.WINDOW_H // 2)))
-
-    # Slow-motion decision mode: cool tint and cinematic letterbox.
-    if game_state.in_slowmo:
-        display.blit(_slowmo(), (0, 0))
-
-    render_hud(display, game_state)
     display.blit(_build_vignette(), (0, 0))
-    _render_flash(display, game_state)
-
-    if game_state.phase == PHASE_END:
-        _render_end(display, game_state)
-    elif game_state.show_menu:
-        _render_menu(display)
+    _render_main_menu(display, game_state)
