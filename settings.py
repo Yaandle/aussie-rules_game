@@ -189,3 +189,15 @@ GOALKICK_CAM_ZOOM    = 1.25   # zooms in further while a meter is running
 GOALKICK_CAM_LERP    = 2.4    # eases about as briskly as Hero's camera
 GOALKICK_HORIZON_Y   = 0.46   # a little lower in frame -> more sky, more "standing height"
 GOALKICK_SPRITE_SCALE = 1.4   # bigger than Hero's 1.15 -> reads up close
+
+# While you're still walking the mark around, pull the same rig back
+# into a wide establishing shot instead — roughly half the ground in
+# frame, so you can see the goal and where you're standing relative to
+# it. GOALKICK_TRANSITION_TIME then swoops the rig from these values
+# down to the tight GOALKICK_CAM_* ones above once the mark is confirmed
+# (see goalkick_state.GoalKickState._update_transition) — a "GTA loading
+# screen" style zoom-in, not a cut.
+GOALKICK_WIDE_CAM_BACK   = 55.0
+GOALKICK_WIDE_CAM_HEIGHT = 34.0
+GOALKICK_WIDE_CAM_FOCAL  = 430.0
+GOALKICK_TRANSITION_TIME = 0.9   # seconds for the wide -> tight swoop

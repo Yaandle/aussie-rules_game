@@ -416,6 +416,14 @@ def to_kick_space(origin, fwd, right, point):
     return (lateral, -forward_dist)
 
 
+def smoothstep(t):
+    """Ease-in-out a 0..1 progress value — cheap, no overshoot. Drives the
+    GOAL KICKING camera's wide-to-tight swoop (see GoalKickState's
+    GK_TRANSITION), where a plain linear blend would feel mechanical."""
+    t = max(0.0, min(1.0, t))
+    return t * t * (3.0 - 2.0 * t)
+
+
 def triangle_wave(elapsed, period):
     """0..1 triangle wave: rises for the first half of `period`, falls for
     the second half. Drives the GOAL KICKING power/accuracy meters."""

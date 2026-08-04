@@ -10,12 +10,21 @@ A fresh wind rolls at the start of every attempt, visible while you're
 still choosing the mark — so it factors into where you decide to stand,
 not just how you compensate the kick.
 
+The camera starts pulled back into a wide establishing shot while you
+walk the mark around (so you can see the goal and the ground around it),
+then swoops into the tight first-person kicking view once you confirm a
+spot — see GK_TRANSITION and settings.GOALKICK_WIDE_CAM_* /
+GOALKICK_CAM_*. It's the same HeroCamera class throughout, just handed
+different — and briefly, interpolated — rig parameters; hero_camera.py
+itself is never touched.
+
 Sub-mode machine:
-  GK_POSITION — walk the mark around, reading the wind; SPACE confirms it
-  GK_POWER    — a power bar sweeps; SPACE locks how hard you kick it
-  GK_ACCURACY — an aim bar sweeps; SPACE locks your line (compensate the wind here)
-  GK_FLIGHT   — the ball travels to a landing spot consistent with the roll
-  GK_RESULT   — goal / behind / miss banner and a running tally; SPACE for another
+  GK_POSITION   — walk the mark around in the wide shot; SPACE confirms it
+  GK_TRANSITION — a brief swoop from the wide shot into the tight kicking view
+  GK_POWER      — a power bar sweeps; SPACE locks how hard you kick it
+  GK_ACCURACY   — an aim bar sweeps; SPACE locks your line (compensate the wind here)
+  GK_FLIGHT     — the ball travels to a landing spot consistent with the roll
+  GK_RESULT     — goal / behind / miss banner and a running tally; SPACE for another
 
 All probabilistic resolution comes from mechanics.py; this module owns
 mutable state and input only; goalkick_render.py draws it.
@@ -31,6 +40,7 @@ from entities import Ball, Player
 from hero_camera import HeroCamera
 
 GK_POSITION = "position"
+GK_TRANSITION = "transition"
 GK_POWER = "power"
 GK_ACCURACY = "accuracy"
 GK_FLIGHT = "flight"
@@ -62,23 +72,30 @@ class GoalKickState:
         self.power_quality = None
         self.aim_angle_deg = None
         self.result = None             # "goal" | "behind" | "miss" once GK_RESULT
+        self.transition_t = 0.0        # progress through GK_TRANSITION's swoop
 
         self.mark_defender = Player(*self.mark_pos, settings.RED)
         self.ball = Ball(*self.mark_pos)
         self.flash = None              # reuses render._render_flash's duck-typed shape
 
-        self.camera = HeroCamera(
+        self.camera = self._wide_camera()
+        self.show_menu = False
+        self.message = ""
+        self.message_timer = 0.0
+
+    def _wide_camera(self):
+        """A fresh establishing-shot camera, pinned to the mark's current
+        position — rebuilt every GK_POSITION frame (see update()) rather
+        than eased, so it follows your held-key movement with zero lag."""
+        return HeroCamera(
             (0.0, 0.0),
-            back=settings.GOALKICK_CAM_BACK,
-            height=settings.GOALKICK_CAM_HEIGHT,
-            focal=settings.GOALKICK_CAM_FOCAL,
+            back=settings.GOALKICK_WIDE_CAM_BACK,
+            height=settings.GOALKICK_WIDE_CAM_HEIGHT,
+            focal=settings.GOALKICK_WIDE_CAM_FOCAL,
             zoom_mult=settings.GOALKICK_CAM_ZOOM,
             lerp=settings.GOALKICK_CAM_LERP,
             horizon_y=settings.GOALKICK_HORIZON_Y,
         )
-        self.show_menu = False
-        self.message = ""
-        self.message_timer = 0.0
 
     # ── Accessors ───────────────────────────────────────────────────
 
@@ -114,7 +131,7 @@ class GoalKickState:
         if event.key == pygame.K_ESCAPE:
             if self.show_menu:
                 self.show_menu = False
-            elif self.in_meter:
+            elif self.mode in (GK_TRANSITION, GK_POWER, GK_ACCURACY):
                 self._new_attempt()          # bail the attempt, keep the mark
             else:
                 self.exit_request = "menu"
@@ -133,8 +150,8 @@ class GoalKickState:
             self._new_attempt()
 
     def _confirm_mark(self):
-        self.mode = GK_POWER
-        self.meter_elapsed = 0.0
+        self.mode = GK_TRANSITION
+        self.transition_t = 0.0
 
     def _lock_meter(self):
         value = self.meter_value
@@ -163,9 +180,20 @@ class GoalKickState:
         if self.show_menu:
             return
 
+        # GK_POSITION and GK_TRANSITION each manage `self.camera` directly
+        # (rebuilding it every frame) rather than easing a persistent
+        # instance — see _wide_camera / _update_transition — so they
+        # return early instead of falling into the shared camera.update()
+        # every other stage below relies on.
         if self.mode == GK_POSITION:
             self._update_position(dt)
-        elif self.in_meter:
+            self.camera = self._wide_camera()
+            return
+        if self.mode == GK_TRANSITION:
+            self._update_transition(dt)
+            return
+
+        if self.in_meter:
             self.meter_elapsed += dt
             self.meter_value = mechanics.triangle_wave(
                 self.meter_elapsed, settings.GOALKICK_METER_PERIOD)
@@ -192,6 +220,38 @@ class GoalKickState:
         pos = self.mark_pos
         self.mark_defender.x, self.mark_defender.y = pos
         self.ball.x, self.ball.y = pos
+
+    def _update_transition(self, dt):
+        """Swoop the rig from the wide establishing shot to the tight
+        kicking view over GOALKICK_TRANSITION_TIME seconds.
+
+        The mark is already frozen by this point (GK_POSITION is over),
+        so there's nothing to track — this only interpolates the
+        camera's own back/height/focal and rebuilds it fresh each frame,
+        the same trick _wide_camera uses. HeroCamera's own easing
+        (self.camera.update()) isn't involved: we're driving the "zoom"
+        ourselves, frame by frame, until it lands exactly on the tight
+        rig's numbers.
+        """
+        self.transition_t += dt
+        frac = mechanics.smoothstep(
+            self.transition_t / settings.GOALKICK_TRANSITION_TIME)
+
+        back = settings.GOALKICK_WIDE_CAM_BACK + (
+            settings.GOALKICK_CAM_BACK - settings.GOALKICK_WIDE_CAM_BACK) * frac
+        height = settings.GOALKICK_WIDE_CAM_HEIGHT + (
+            settings.GOALKICK_CAM_HEIGHT - settings.GOALKICK_WIDE_CAM_HEIGHT) * frac
+        focal = settings.GOALKICK_WIDE_CAM_FOCAL + (
+            settings.GOALKICK_CAM_FOCAL - settings.GOALKICK_WIDE_CAM_FOCAL) * frac
+        self.camera = HeroCamera(
+            (0.0, 0.0), back=back, height=height, focal=focal,
+            zoom_mult=settings.GOALKICK_CAM_ZOOM, lerp=settings.GOALKICK_CAM_LERP,
+            horizon_y=settings.GOALKICK_HORIZON_Y,
+        )
+
+        if frac >= 1.0:
+            self.mode = GK_POWER
+            self.meter_elapsed = 0.0
 
     def _launch(self):
         """Decide the outcome first (see mechanics.resolve_goalkick), then
