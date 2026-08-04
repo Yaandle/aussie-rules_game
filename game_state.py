@@ -18,6 +18,7 @@ import levels
 import mechanics
 import settings
 from entities import Ball, Player
+from goalkick_state import GoalKickState
 from hero_camera import HeroCamera
 from hero_state import HeroState
 
@@ -30,12 +31,13 @@ PHASE_MENU = "menu"
 PHASE_PLAYING = "playing"
 PHASE_END = "end"
 PHASE_HERO = "hero"
+PHASE_GOALKICK = "goalkick"
 
 # Menu screens and options
 SCREEN_ROOT = "root"
 SCREEN_SCENARIOS = "scenarios"
 SCREEN_HERO = "hero_select"
-ROOT_OPTIONS = ("FULL GAME", "SCENARIOS", "AFL HERO", "QUIT")
+ROOT_OPTIONS = ("FULL GAME", "SCENARIOS", "AFL HERO", "GOAL KICKING", "QUIT")
 
 # ── FULL GAME formation ──────────────────────────────────────────────
 # Six standard AFL lines, three players each (18 on-field a side —
@@ -127,6 +129,7 @@ class GameState:
         self.unlocked = 1                # how many scenarios are playable
         self.hero = None                 # active HeroState (AFL Hero mode)
         self.hero_unlocked = 1           # how many hero levels are playable
+        self.goalkick = None             # active GoalKickState (GOAL KICKING mode)
 
         # Mode context.
         self.game_mode = None            # "full" | "scenario"
@@ -206,6 +209,12 @@ class GameState:
         self.hero = HeroState(index)
         self.phase = PHASE_HERO
 
+    def start_goal_kicking(self):
+        """Begin the GOAL KICKING practice range — freeform, no level
+        list, so this jumps straight in like start_full_game does."""
+        self.goalkick = GoalKickState()
+        self.phase = PHASE_GOALKICK
+
     # ── Convenience accessors ───────────────────────────────────────
 
     @property
@@ -249,6 +258,9 @@ class GameState:
         elif self.phase == PHASE_HERO:
             if self.hero is not None:
                 self.hero.handle_input(event)
+        elif self.phase == PHASE_GOALKICK:
+            if self.goalkick is not None:
+                self.goalkick.handle_input(event)
         elif self.phase == PHASE_END:
             self._end_input(event)
         else:
@@ -289,6 +301,8 @@ class GameState:
             elif self.menu_index == 2:
                 self.menu_screen = SCREEN_HERO
                 self.menu_index = 0
+            elif self.menu_index == 3:
+                self.start_goal_kicking()
             else:
                 pygame.event.post(pygame.event.Event(pygame.QUIT))
         elif self.menu_screen == SCREEN_HERO:
@@ -430,6 +444,9 @@ class GameState:
         if self.phase == PHASE_HERO:
             self._update_hero(dt)
             return
+        if self.phase == PHASE_GOALKICK:
+            self._update_goalkick(dt)
+            return
         if self.phase != PHASE_PLAYING or self.show_menu:
             return
 
@@ -510,6 +527,22 @@ class GameState:
             nxt = self.hero.level_index + 1
             if nxt < len(hero_levels.HERO_LEVELS) and nxt < self.hero_unlocked:
                 self.start_hero(nxt)
+
+    def _update_goalkick(self, dt):
+        """Drive the GOAL KICKING practice range; harvest exit requests.
+
+        Freeform, no unlocks to track — unlike _update_hero there's
+        nothing to do here but forward the update and watch for "menu".
+        """
+        if self.goalkick is None:
+            self.phase = PHASE_MENU
+            return
+        self.goalkick.update(dt)
+        request, self.goalkick.exit_request = self.goalkick.exit_request, None
+        if request == "menu":
+            self.phase = PHASE_MENU
+            self.menu_screen = SCREEN_ROOT
+            self.menu_index = 3
 
     def _time_expired(self):
         """The clock hit zero: full time, or a failed scenario."""

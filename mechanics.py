@@ -377,3 +377,134 @@ def resolve_scoring_attempt(kick_origin, target_point):
     if roll < p_goal + p_behind:
         return "behind"
     return "miss"
+
+
+# ── GOAL KICKING mode helpers (pure) ─────────────────────────────────
+# The practice range's own resolution: a timed power/accuracy meter and
+# a crosswind, instead of a clicked target point. Distance/angle-off-goal
+# difficulty follows the same shape as resolve_scoring_attempt above;
+# meter timing (power_quality, aim_angle_deg) and wind layer on top.
+
+def kick_axes(from_point, to_point):
+    """Forward (from_point -> to_point) and right unit vectors.
+
+    The local axes for GOAL KICKING's camera and entity projection,
+    which — unlike the fixed broadcast rigs (MAIN_CAM/HERO_CAM), which
+    never yaw and always show goals left/right — always faces whichever
+    goal the current kick is aimed at.
+    """
+    fx = to_point[0] - from_point[0]
+    fy = to_point[1] - from_point[1]
+    length = math.hypot(fx, fy) or 1.0
+    fwd = (fx / length, fy / length)
+    right = (-fwd[1], fwd[0])
+    return fwd, right
+
+
+def to_kick_space(origin, fwd, right, point):
+    """World (x, y) -> local (x, z) around `origin`, aligned to the
+    `fwd`/`right` axes from kick_axes, ready for HeroCamera.project().
+
+    Local z shrinks toward (and past) zero as a point nears the goal,
+    matching the "small z is far" convention HeroCamera already uses
+    for every other camera in the game.
+    """
+    dx = point[0] - origin[0]
+    dy = point[1] - origin[1]
+    forward_dist = dx * fwd[0] + dy * fwd[1]
+    lateral = dx * right[0] + dy * right[1]
+    return (lateral, -forward_dist)
+
+
+def triangle_wave(elapsed, period):
+    """0..1 triangle wave: rises for the first half of `period`, falls for
+    the second half. Drives the GOAL KICKING power/accuracy meters."""
+    phase = (elapsed % period) / period
+    return 1.0 - abs(2.0 * phase - 1.0)
+
+
+def roll_wind():
+    """A fresh crosswind for one GOAL KICKING attempt: signed strength up
+    to GOALKICK_WIND_MAX (positive blows the ball toward +y — "right" as
+    the kicker looks down the line at goal)."""
+    return random.uniform(-settings.GOALKICK_WIND_MAX, settings.GOALKICK_WIND_MAX)
+
+
+def wind_angle_effect(wind_speed, distance):
+    """Convert a crosswind (roll_wind units) and kick distance into the
+    equivalent uncompensated aim drift, in degrees.
+
+    Longer kicks spend more time exposed to the wind, so the same
+    breeze pushes them further off line.
+    """
+    dist_factor = min(distance / settings.GOALKICK_MAX_RANGE, 1.0)
+    return wind_speed * dist_factor * settings.GOALKICK_WIND_DEG_PER_UNIT
+
+
+def goalkick_power_quality(power_t, ideal_t):
+    """0..1 timing quality for the power meter: 1.0 when the locked value
+    exactly matches the distance-scaled ideal, decaying to 0 once the
+    miss reaches GOALKICK_POWER_TOLERANCE."""
+    error = abs(power_t - ideal_t)
+    return max(0.0, 1.0 - error / settings.GOALKICK_POWER_TOLERANCE)
+
+
+def resolve_goalkick(mark_pos, aim_angle_deg, power_quality, wind_deg):
+    """Resolve a timed GOAL KICKING attempt into "goal" / "behind" / "miss".
+
+    Follows the same distance/angle-off-goal difficulty curve as a shot
+    on goal elsewhere (resolve_scoring_attempt), layered with the
+    kicker's timing skill: `aim_angle_deg` is the angle locked on the
+    accuracy meter (0 = dead straight at goal), `wind_deg` is the wind's
+    uncompensated push added on top, and `power_quality` (0..1, 1 =
+    perfectly timed) is how well the power meter matched the distance —
+    badly undercooked power rules a goal out entirely.
+    """
+    goal = settings.GOAL_RIGHT
+    distance = _dist(mark_pos, goal)
+    dist_factor = min(distance / settings.GOALKICK_MAX_RANGE, 1.0)
+
+    final_angle = abs(aim_angle_deg + wind_deg)
+    angle_factor = min(final_angle / settings.GOALKICK_ACC_SPREAD, 1.0)
+
+    p_goal = (0.88 * power_quality
+              * (1.0 - 0.4 * dist_factor)
+              * (1.0 - angle_factor) ** 1.6)
+    p_behind = max(0.0, 0.22 + 0.20 * angle_factor - 0.12 * power_quality)
+    if power_quality < 0.3:               # badly undercooked — never a goal
+        p_goal = 0.0
+
+    roll = random.random()
+    if roll < p_goal:
+        return "goal"
+    if roll < p_goal + p_behind:
+        return "behind"
+    return "miss"
+
+
+def goalkick_landing_point(mark_pos, result, aim_angle_deg, wind_deg, power_quality):
+    """A plausible landing spot for the flight animation, consistent with
+    an already-decided resolve_goalkick() result.
+
+    The outcome is decided first (probability, not physics); this only
+    stages where the ball visibly comes down to match it — through the
+    main posts for a goal, wide of them but inside the points for a
+    behind, and either short (badly undercooked power) or well wide
+    otherwise for a miss.
+    """
+    goal = settings.GOAL_RIGHT
+    side = 1.0 if (aim_angle_deg + wind_deg) >= 0.0 else -1.0
+
+    if result == "goal":
+        y = settings.FIELD_CY + side * random.uniform(0.0, 2.0)
+        return (goal[0], y)
+    if result == "behind":
+        y = settings.FIELD_CY + side * random.uniform(3.5, 6.5)
+        return (goal[0], y)
+
+    if power_quality < 0.3:               # fell short, never reached the line
+        frac = 0.55 + 0.25 * power_quality
+        return (mark_pos[0] + (goal[0] - mark_pos[0]) * frac,
+                mark_pos[1] + (goal[1] - mark_pos[1]) * frac)
+    y = settings.FIELD_CY + side * random.uniform(8.0, 13.0)  # well wide
+    return (goal[0], y)

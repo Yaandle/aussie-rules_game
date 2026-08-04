@@ -154,3 +154,38 @@ HERO_LEAD_SPEED       = 16.0  # leading forwards run at this speed
 HERO_BOUNCE_SCATTER   = 7.0   # max deflection of an oval-ball ground bounce
 HERO_LOOSE_RADIUS     = 12.0  # players this close join a loose-ball scramble
 HERO_LOOSE_DELAY      = 0.7   # seconds the loose ball sits before the scramble
+
+# ── GOAL KICKING mode: range & wind ──────────────────────────────────
+# A freeform practice range, not a hand-placed level list: walk "the
+# mark" anywhere in this arc, read the wind, then time a two-stage
+# power/accuracy meter. Always kicks at GOAL_RIGHT, same as everywhere
+# else YELLOW attacks.
+GOALKICK_MIN_RANGE    = 15.0   # closest you can mark out from goal
+GOALKICK_MAX_RANGE    = 65.0   # furthest practice kick allowed
+GOALKICK_POWER_RANGE  = GOALKICK_MAX_RANGE * 1.15  # distance a full-power kick travels
+GOALKICK_MAX_ANGLE    = 48.0   # degrees either side of dead-straight you can mark from
+GOALKICK_MARK_MOVE_SPEED = 16.0  # units/sec walking the mark in/out
+GOALKICK_MARK_TURN_SPEED = 30.0  # deg/sec walking the mark around the arc
+
+GOALKICK_WIND_MAX          = 18.0  # strongest crosswind a practice kick will throw at you
+GOALKICK_WIND_DEG_PER_UNIT = 0.75  # aim drift (degrees) per wind unit at max range
+
+# ── GOAL KICKING mode: the timing meter ──────────────────────────────
+GOALKICK_METER_PERIOD    = 1.05  # seconds for one full sweep of either bar
+GOALKICK_POWER_TOLERANCE = 0.15  # +/- miss on the power bar before quality hits 0
+GOALKICK_ACC_SPREAD      = 26.0  # degrees of aim swing across the accuracy bar
+
+# ── GOAL KICKING mode: camera ────────────────────────────────────────
+# Reuses HeroCamera's projection math untouched via a per-attempt
+# coordinate swap (see mechanics.kick_axes / to_kick_space) instead of a
+# new camera class — GOAL KICKING always looks straight down the kicking
+# line at whichever goal you're aiming for, unlike the broadcast-style
+# MAIN_CAM / HERO_CAM rigs, which never yaw and always show goals
+# left/right. Closer and lower than either -> a first-person read.
+GOALKICK_CAM_BACK    = 9.0    # right behind the kicker's shoulder
+GOALKICK_CAM_HEIGHT  = 11.0   # roughly head height
+GOALKICK_CAM_FOCAL   = 620.0  # tighter than the broadcast rigs -> zoomed in
+GOALKICK_CAM_ZOOM    = 1.25   # zooms in further while a meter is running
+GOALKICK_CAM_LERP    = 2.4    # eases about as briskly as Hero's camera
+GOALKICK_HORIZON_Y   = 0.46   # a little lower in frame -> more sky, more "standing height"
+GOALKICK_SPRITE_SCALE = 1.4   # bigger than Hero's 1.15 -> reads up close

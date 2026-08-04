@@ -6,10 +6,11 @@ Run with:  pip install pygame  →  python main.py
 import pygame
 
 import field_render
+import goalkick_render
 import hero_render
 import render
 import settings
-from game_state import PHASE_HERO, PHASE_MENU, GameState
+from game_state import PHASE_GOALKICK, PHASE_HERO, PHASE_MENU, GameState
 
 
 def main():
@@ -34,6 +35,8 @@ def main():
         game_state.update(dt)
         if game_state.phase == PHASE_HERO and game_state.hero is not None:
             hero_render.render_hero(display, game_state.hero)
+        elif game_state.phase == PHASE_GOALKICK and game_state.goalkick is not None:
+            goalkick_render.render_goalkick(display, game_state.goalkick)
         elif game_state.phase == PHASE_MENU:
             render.render(display, game_state)
         else:
