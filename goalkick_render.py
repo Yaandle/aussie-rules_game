@@ -10,10 +10,15 @@ from the camera's point of view it's just another fixed, non-yawing rig
 looking down its own local z axis.
 
 The ground here is a simple banded plane rather than the full oval
-renderer's boundary/markings — this view never shows the boundary, so
-there's nothing to gain from the extra geometry. Sprites, shadows, and
+renderer's boundary — this view never shows the boundary itself, so
+there's nothing to gain from that extra geometry — but the 50m arc and
+goal square around the goal you're kicking at are drawn (same numbers
+as render_field / hero_render._render_markings, rotated into kick-space)
+so the mark reads against real field distances. Sprites, shadows, and
 cached text all reuse hero_render's helpers. Never mutates state.
 """
+
+import math
 
 import pygame
 
@@ -37,6 +42,16 @@ def _axes(state):
 
 def _local(state, fwd, right, point):
     return mechanics.to_kick_space(state.mark_pos, fwd, right, point)
+
+
+def _proj_world_line(display, cam, state, fwd, right, world_pts, color,
+                     width=2, closed=False):
+    """Like hero_render._proj_line, but `world_pts` are ordinary field
+    coordinates (the same ones render_field / hero_render._render_markings
+    use) — rotated into this attempt's kick-space before projecting."""
+    local_pts = [_local(state, fwd, right, p) for p in world_pts]
+    hero_render._proj_line(display, cam, local_pts, color, width=width,
+                           closed=closed)
 
 
 # ── Ground & sky ──────────────────────────────────────────────────────
@@ -66,6 +81,27 @@ def _render_ground(display, cam):
 
     guide = [(0.0, 12.0 - s) for s in range(0, 90, 4)]
     hero_render._proj_dots(display, cam, guide, pygame.Color(settings.LINE))
+
+
+def _render_field_markings(display, cam, state):
+    """The 50m arc and goal square around the goal you're kicking at —
+    the same geometry render_field / hero_render._render_markings draw
+    for the other modes, rotated into kick-space. Reference lines so
+    walking the mark around (and the kick itself) reads against the
+    real field rather than an abstract practice range."""
+    fwd, right = _axes(state)
+    cy = settings.FIELD_CY
+    gx = settings.GOAL_RIGHT[0]
+    r = settings.SCORING_ARC_RADIUS
+    line = pygame.Color(settings.LINE)
+
+    arc = hero_render._circle_pts(gx, cy, r, n=32,
+                                  a0=math.pi / 2, a1=math.pi * 1.5)
+    _proj_world_line(display, cam, state, fwd, right, arc, line, width=2)
+
+    square = [(gx, cy - 4), (gx - 6, cy - 4), (gx - 6, cy + 4), (gx, cy + 4)]
+    _proj_world_line(display, cam, state, fwd, right, square, line,
+                     width=2, closed=True)
 
 
 def _goal_drawables(cam, state):
@@ -298,6 +334,7 @@ def render_goalkick(display, state):
     cam = state.camera
 
     _render_ground(display, cam)
+    _render_field_markings(display, cam, state)
 
     drawables = _goal_drawables(cam, state) + _entity_drawables(cam, state)
     drawables.sort(key=lambda item: -item[0])

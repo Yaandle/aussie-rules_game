@@ -181,10 +181,14 @@ GOALKICK_ACC_SPREAD      = 26.0  # degrees of aim swing across the accuracy bar
 # new camera class — GOAL KICKING always looks straight down the kicking
 # line at whichever goal you're aiming for, unlike the broadcast-style
 # MAIN_CAM / HERO_CAM rigs, which never yaw and always show goals
-# left/right. Closer and lower than either -> a first-person read.
-GOALKICK_CAM_BACK    = 9.0    # right behind the kicker's shoulder
-GOALKICK_CAM_HEIGHT  = 11.0   # roughly head height
-GOALKICK_CAM_FOCAL   = 620.0  # tighter than the broadcast rigs -> zoomed in
+# left/right. Closer and lower than the wide establishing shot below for
+# a first-person read, but pulled back enough that the goal structure
+# stays fully in frame through the power/accuracy meters and the kick's
+# flight, rather than cropping in tight on the ground right in front of
+# the kicker.
+GOALKICK_CAM_BACK    = 26.0   # far enough back the whole goal structure reads
+GOALKICK_CAM_HEIGHT  = 17.0   # above head height -> the posts don't clip out of frame
+GOALKICK_CAM_FOCAL   = 470.0  # wider than the original 620 -> goals stay in view
 GOALKICK_CAM_ZOOM    = 1.25   # zooms in further while a meter is running
 GOALKICK_CAM_LERP    = 2.4    # eases about as briskly as Hero's camera
 GOALKICK_HORIZON_Y   = 0.46   # a little lower in frame -> more sky, more "standing height"
