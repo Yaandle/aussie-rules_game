@@ -18,11 +18,18 @@ GOALKICK_CAM_*. It's the same HeroCamera class throughout, just handed
 different — and briefly, interpolated — rig parameters; hero_camera.py
 itself is never touched.
 
+Aiming is two layers, both live during GK_ACCURACY: hold left/right to
+steer an intended line by hand (the bias — this is where you actually
+compensate the wind, watch the aim reticle to see where you're
+pointed), while the sweeping bar adds a smaller timing-precision wobble
+on top when you lock it. Read the wind, dial in a line, then still
+need decent timing to hit it clean.
+
 Sub-mode machine:
   GK_POSITION   — walk the mark around in the wide shot; SPACE confirms it
   GK_TRANSITION — a brief swoop from the wide shot into the tight kicking view
   GK_POWER      — a power bar sweeps; SPACE locks how hard you kick it
-  GK_ACCURACY   — an aim bar sweeps; SPACE locks your line (compensate the wind here)
+  GK_ACCURACY   — steer your aim and time the bar; SPACE locks both
   GK_FLIGHT     — the ball travels to a landing spot consistent with the roll
   GK_RESULT     — goal / behind / miss banner and a running tally; SPACE for another
 
@@ -70,7 +77,8 @@ class GoalKickState:
         self.meter_value = 0.0
         self.power_t = None
         self.power_quality = None
-        self.aim_angle_deg = None
+        self.aim_bias_deg = 0.0        # your hand-steered aim, adjusted during GK_ACCURACY
+        self.aim_angle_deg = None      # bias + timing wobble, set once GK_ACCURACY locks
         self.result = None             # "goal" | "behind" | "miss" once GK_RESULT
         self.transition_t = 0.0        # progress through GK_TRANSITION's swoop
 
@@ -162,7 +170,8 @@ class GoalKickState:
             self.mode = GK_ACCURACY
             self.meter_elapsed = 0.0
         else:                                             # GK_ACCURACY
-            self.aim_angle_deg = (value - 0.5) * 2.0 * settings.GOALKICK_ACC_SPREAD
+            wobble = (value - 0.5) * 2.0 * settings.GOALKICK_ACC_SPREAD
+            self.aim_angle_deg = self.aim_bias_deg + wobble
             self._launch()
 
     # ── Update loop ─────────────────────────────────────────────────
@@ -197,10 +206,24 @@ class GoalKickState:
             self.meter_elapsed += dt
             self.meter_value = mechanics.triangle_wave(
                 self.meter_elapsed, settings.GOALKICK_METER_PERIOD)
+            if self.mode == GK_ACCURACY:
+                self._update_aim(dt)
         elif self.mode == GK_FLIGHT:
             self._update_flight(dt)
 
         self.camera.update(dt, self._focus_local(), self.in_meter)
+
+    def _update_aim(self, dt):
+        """Hold left/right to steer the intended aim (see module docstring
+        — this is the hand-controlled half of aiming; the meter you're
+        also watching right now supplies the other half, a smaller
+        timing wobble around wherever this points)."""
+        keys = pygame.key.get_pressed()
+        turn = (keys[pygame.K_RIGHT] or keys[pygame.K_d]) - \
+               (keys[pygame.K_LEFT] or keys[pygame.K_a])
+        self.aim_bias_deg = max(-settings.GOALKICK_AIM_BIAS_MAX, min(
+            settings.GOALKICK_AIM_BIAS_MAX,
+            self.aim_bias_deg + turn * settings.GOALKICK_AIM_BIAS_SPEED * dt))
 
     def _update_position(self, dt):
         """Poll held keys to walk the mark around its allowed arc."""
@@ -265,7 +288,7 @@ class GoalKickState:
         landing = mechanics.goalkick_landing_point(
             mark, self.result, self.aim_angle_deg, wind_deg, self.power_quality)
 
-        self.ball.start_flight(mark, landing)
+        self.ball.start_flight(mark, landing, speed=settings.GOALKICK_FLIGHT_SPEED)
         self.mode = GK_FLIGHT
 
     def _update_flight(self, dt):

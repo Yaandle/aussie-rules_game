@@ -76,8 +76,15 @@ class Ball:
         self.in_flight = False
         self.x, self.y = player.x, player.y
 
-    def start_flight(self, from_point, to_point):
-        """Launch the ball from one point toward another (kick/handball travel)."""
+    def start_flight(self, from_point, to_point, speed=None):
+        """Launch the ball from one point toward another (kick/handball travel).
+
+        `speed` overrides settings.BALL_FLIGHT_SPEED for callers that want
+        a different pace — GOAL KICKING plays its flight out slower, for
+        instance (settings.GOALKICK_FLIGHT_SPEED), so there's time to
+        actually watch the kick. Every other caller leaves it at the
+        default and behaves exactly as before.
+        """
         self.possessed_by = None
         self.in_flight = True
         self._flight_from = from_point
@@ -85,7 +92,7 @@ class Ball:
         self._flight_t = 0.0
         dist = math.hypot(to_point[0] - from_point[0], to_point[1] - from_point[1])
         self.flight_distance = dist
-        self._flight_duration = max(dist / settings.BALL_FLIGHT_SPEED, 0.1)
+        self._flight_duration = max(dist / (speed or settings.BALL_FLIGHT_SPEED), 0.1)
         self.x, self.y = from_point
 
     def advance_flight(self, dt):

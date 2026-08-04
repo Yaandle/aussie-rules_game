@@ -170,10 +170,20 @@ GOALKICK_MARK_TURN_SPEED = 30.0  # deg/sec walking the mark around the arc
 GOALKICK_WIND_MAX          = 18.0  # strongest crosswind a practice kick will throw at you
 GOALKICK_WIND_DEG_PER_UNIT = 0.75  # aim drift (degrees) per wind unit at max range
 
+GOALKICK_FLIGHT_SPEED = 60.0  # slower than the default BALL_FLIGHT_SPEED (95) — a kick
+                               # this deliberate deserves time in the air to watch
+
 # ── GOAL KICKING mode: the timing meter ──────────────────────────────
+# Aim is now two layers: you steer an intended line by hand (the bias,
+# arrow keys, up to GOALKICK_AIM_BIAS_MAX either way — this is where you
+# actually compensate the wind), then the accuracy meter adds a smaller
+# timing-precision wobble on top of wherever you aimed. Mistime it and
+# even a well-read wind gets shanked slightly off your intended line.
 GOALKICK_METER_PERIOD    = 1.05  # seconds for one full sweep of either bar
 GOALKICK_POWER_TOLERANCE = 0.15  # +/- miss on the power bar before quality hits 0
-GOALKICK_ACC_SPREAD      = 26.0  # degrees of aim swing across the accuracy bar
+GOALKICK_ACC_SPREAD      = 9.0   # timing-precision wobble, degrees either way
+GOALKICK_AIM_BIAS_MAX    = 26.0  # how far off dead-straight you can deliberately aim
+GOALKICK_AIM_BIAS_SPEED  = 22.0  # deg/sec nudging the aim bias while it's live
 
 # ── GOAL KICKING mode: camera ────────────────────────────────────────
 # Reuses HeroCamera's projection math untouched via a per-attempt

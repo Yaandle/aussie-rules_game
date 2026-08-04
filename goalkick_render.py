@@ -136,6 +136,35 @@ def _goal_drawables(cam, state):
     return items
 
 
+def _aim_drawable(cam, state):
+    """A small reticle at goal-mouth height, wherever the current aim
+    bias currently points — the visual half of GK_ACCURACY's hand-aim
+    control (see GoalKickState._update_aim). Only live while the
+    accuracy stage is actually asking you to steer it."""
+    if state.mode != gks.GK_ACCURACY:
+        return None
+    fwd, right = _axes(state)
+    dist = math.hypot(settings.GOAL_RIGHT[0] - state.mark_pos[0],
+                      settings.GOAL_RIGHT[1] - state.mark_pos[1])
+    target = mechanics.aim_ray_point(state.mark_pos, fwd, right,
+                                     state.aim_bias_deg, dist)
+    lx, lz = _local(state, fwd, right, target)
+    proj = cam.project(lx, lz, 5.0)     # roughly mid-post height
+    if proj is None:
+        return None
+    sx, sy, scale, depth = proj
+
+    def draw(display, sx=sx, sy=sy, scale=scale):
+        s = max(3, int(scale * 0.5))
+        col = pygame.Color(settings.YELLOW)
+        x, y = int(sx), int(sy)
+        pygame.draw.line(display, col, (x - s, y), (x + s, y), 2)
+        pygame.draw.line(display, col, (x, y - s), (x, y + s), 2)
+        pygame.draw.circle(display, col, (x, y), s + 3, 1)
+
+    return (depth, draw)
+
+
 # ── Entities ────────────────────────────────────────────────────────
 
 def _entity_drawables(cam, state):
@@ -201,8 +230,10 @@ def _entity_drawables(cam, state):
 
 def _render_meters(display, state):
     """The active timing bar: a moving marker, and (power only) a gold
-    sweet-spot tick — the accuracy bar's centre tick is neutral, since
-    reading the wind and compensating for it is the whole game."""
+    sweet-spot tick. The accuracy bar's centre tick is just a neutral
+    "no wobble" reference now — aiming itself is the reticle plus
+    arrow-key steering (see _aim_drawable), this bar only adds
+    timing-precision noise around wherever that's pointed."""
     charcoal = pygame.Color(settings.UI_CHARCOAL)
     ink = pygame.Color(settings.INK)
     cream = pygame.Color(settings.CREAM)
@@ -225,7 +256,7 @@ def _render_meters(display, state):
     if state.mode == gks.GK_POWER:
         bar("POWER", state.meter_value, state.ideal_power_t, gold)
     elif state.mode == gks.GK_ACCURACY:
-        bar("LINE  (READ THE WIND)", state.meter_value, 0.5, muted)
+        bar("TIMING", state.meter_value, 0.5, muted)
 
 
 def _render_wind(display, state):
@@ -267,7 +298,7 @@ def _render_hud(display, state):
         hint_text = {
             gks.GK_POSITION: "ARROWS WALK THE MARK  ·  SPACE TO KICK FROM HERE",
             gks.GK_POWER: "SPACE — LOCK YOUR POWER",
-            gks.GK_ACCURACY: "SPACE — LOCK YOUR LINE",
+            gks.GK_ACCURACY: "ARROWS STEER YOUR AIM  ·  SPACE — LOCK YOUR TIMING",
             gks.GK_RESULT: "SPACE — KICK AGAIN  ·  ESC MENU",
         }.get(state.mode)
         if hint_text:
@@ -310,7 +341,7 @@ def _render_controls(display):
     title = font_big.render("CONTROLS", True, pygame.Color(settings.CREAM))
     display.blit(title, (box.centerx - title.get_width() // 2, box.y + 22))
 
-    rows = (("ARROWS / WASD", "WALK THE MARK"),
+    rows = (("ARROWS / WASD", "WALK THE MARK  ·  STEER YOUR AIM"),
             ("SPACE / ENTER", "CONFIRM MARK  ·  LOCK THE METER"),
             ("ESC", "CANCEL ATTEMPT / MENU"),
             ("M", "OPEN · CLOSE MENU"))
@@ -322,7 +353,8 @@ def _render_controls(display):
         display.blit(font.render(action, True, muted), (box.x + 230, y))
 
     footer = font_small.render(
-        "READ THE WIND BEFORE YOU LOCK YOUR LINE  ·  GAME PAUSED", True, muted)
+        "READ THE WIND, STEER YOUR AIM, THEN TIME YOUR STRIKE  ·  GAME PAUSED",
+        True, muted)
     display.blit(footer, (box.centerx - footer.get_width() // 2,
                           box.bottom - 40))
 
@@ -337,6 +369,9 @@ def render_goalkick(display, state):
     _render_field_markings(display, cam, state)
 
     drawables = _goal_drawables(cam, state) + _entity_drawables(cam, state)
+    aim = _aim_drawable(cam, state)
+    if aim is not None:
+        drawables.append(aim)
     drawables.sort(key=lambda item: -item[0])
     for _, draw in drawables:
         draw(display)

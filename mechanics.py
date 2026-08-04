@@ -401,6 +401,20 @@ def kick_axes(from_point, to_point):
     return fwd, right
 
 
+def aim_ray_point(origin, fwd, right, angle_deg, distance):
+    """A point `distance` out from `origin`, along `fwd` (from kick_axes)
+    rotated by `angle_deg` toward `right`.
+
+    Used for the GOAL KICKING aim reticle: wherever this lands is where
+    the kick is currently pointed, before the timing meter's precision
+    wobble gets added on top.
+    """
+    rad = math.radians(angle_deg)
+    dx = fwd[0] * math.cos(rad) + right[0] * math.sin(rad)
+    dy = fwd[1] * math.cos(rad) + right[1] * math.sin(rad)
+    return (origin[0] + dx * distance, origin[1] + dy * distance)
+
+
 def to_kick_space(origin, fwd, right, point):
     """World (x, y) -> local (x, z) around `origin`, aligned to the
     `fwd`/`right` axes from kick_axes, ready for HeroCamera.project().
