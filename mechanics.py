@@ -21,15 +21,24 @@ def _dist(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
-def update_defenders(opponents, carrier_pos, dt):
+def update_defenders(opponents, carrier_pos, dt, home_positions=None):
     """Closing-pressure AI: the nearest defenders converge on the carrier.
 
     Only the closest MAX_CHASERS defenders within CHASE_RADIUS give chase,
     at a deliberate walk, and they pull up at arm's length — enough to
     threaten pressure without tackling (see EXTEND notes above).
+
+    Everyone else on the side is idle by default, which was fine against
+    a handful of opponents but reads as a wall of statues at full 18-a-side
+    strength. When `home_positions` is supplied (FULL GAME only — see
+    update_off_ball), the non-chasing rest of the team eases toward their
+    kickoff formation spot blended with the ball, holding rough team shape
+    instead of standing frozen. Scenarios pass None and keep their
+    original, fully-static non-chasers untouched.
     """
     chasers = sorted(opponents,
                      key=lambda o: o.distance_to(carrier_pos))[:settings.MAX_CHASERS]
+    chaser_ids = {id(o) for o in chasers}
     for opp in chasers:
         d = opp.distance_to(carrier_pos)
         if d > settings.CHASE_RADIUS or d <= settings.DEFENDER_MIN_DIST:
@@ -44,6 +53,31 @@ def update_defenders(opponents, carrier_pos, dt):
         ey = (ny - settings.FIELD_CY) / ry
         if ex * ex + ey * ey <= 1.0:
             opp.x, opp.y = nx, ny
+
+    if home_positions:
+        resting = [o for o in opponents if id(o) not in chaser_ids]
+        update_off_ball(resting, home_positions, carrier_pos, dt)
+
+
+def update_off_ball(players, home_positions, focus_pos, dt):
+    """Ease off-ball players toward a blend of their kickoff "home" spot
+    and the ball, so the far side of the ground holds rough team shape
+    while the near side leans into the contest.
+
+    `home_positions` maps id(player) -> the (x, y) formation spot they
+    were kicked off from (captured once in GameState._load_layout).
+    OFF_BALL_DRIFT caps how far off that home spot the ball pulls them —
+    small, so the formation stays recognisable. This is shape-holding,
+    not real off-ball running: just enough that a full 36-player oval
+    doesn't read as half statues.
+    """
+    for p in players:
+        home = home_positions.get(id(p))
+        if home is None:
+            continue
+        tx = home[0] + (focus_pos[0] - home[0]) * settings.OFF_BALL_DRIFT
+        ty = home[1] + (focus_pos[1] - home[1]) * settings.OFF_BALL_DRIFT
+        _step_toward(p, (tx, ty), settings.OFF_BALL_SPEED, dt, stop_at=1.0)
 
 
 def calculate_pressure(ball_carrier, opponents):

@@ -85,6 +85,11 @@ CHASE_RADIUS      = 38.0  # defenders further than this stay home
 DEFENDER_MIN_DIST = 4.0   # they hold off at arm's length (no tackling yet)
 MAX_CHASERS       = 2     # how many defenders pressure at once
 
+# Off-ball shape (FULL GAME only — scenarios keep their original fully
+# static non-chasers, so hand-tuned puzzle moments don't drift).
+OFF_BALL_SPEED = 5.0   # well under DEFENDER_SPEED: repositioning, not chasing
+OFF_BALL_DRIFT = 0.30  # 0..1 lean from formation "home" spot toward the ball
+
 # ── Probability model ───────────────────────────────────────────────
 PRESSURE_RADIUS      = 20.0  # opponent within this range applies pressure
 HANDBALL_BASE_ACC    = 0.92  # short range, high base accuracy
@@ -120,6 +125,12 @@ MAIN_CAM_FOCAL  = 500.0  # slightly wider than Hero's 520.0 -> mild zoom out
 MAIN_CAM_ZOOM   = 1.20   # gentler zoom-in while aiming a kick than Hero's 1.35
 MAIN_CAM_LERP   = 1.8    # slower ease than Hero's 3.0 -> camera feels more fixed
 MAIN_HORIZON_Y  = 0.40   # unchanged
+# Own sprite-scale knob (mirrors HERO_SPRITE_SCALE) so FULL GAME / SCENARIOS
+# can be tuned independently of Hero mode. Smaller than Hero's 1.15: with
+# up to 36 bodies on the oval instead of a handful, shrinking each sprite
+# a touch keeps the foreground readable instead of turning into a mush of
+# overlapping guernseys.
+MAIN_SPRITE_SCALE = 0.85
 
 # ── AFL Hero mode: decision & swipe tuning ──────────────────────────
 HERO_SLOWMO       = 0.12  # deep time dilation while deciding

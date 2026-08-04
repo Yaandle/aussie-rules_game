@@ -19,7 +19,7 @@ import settings
 from hero_state import HS_DONE, HS_RUN
 
 # ── Module-level caches ─────────────────────────────────────────────
-_sprite_cache = {}      # (team, walking, frame) → 7x12 Surface
+_sprite_cache = {}      # (team, walking, frame, variant) → 7x12 Surface
 _shadow_cache = {}      # (w, h) → soft ellipse Surface
 _scaled_cache = {}      # (key, w, h) → nearest-neighbor scaled Surface
 _text_cache = {}        # (font, text, color) → rendered text Surface
@@ -50,12 +50,17 @@ def _scaled(base, w, h, key):
 
 # ── Cached mini-sprites ─────────────────────────────────────────────
 
-def _player_sprite(team, walking, frame):
-    """The 7x12 chibi sprite on a transparent surface, cached."""
-    key = (team, walking, frame)
+def _player_sprite(team, walking, frame, variant=0):
+    """The 7x12 chibi sprite on a transparent surface, cached.
+
+    `variant` (see render.SPRITE_VARIANTS) picks the small deterministic
+    hairstyle/build/stance mix — callers pass a stable per-player key
+    (their list index) so the same player looks the same all match.
+    """
+    key = (team, walking, frame, variant)
     if key not in _sprite_cache:
         surf = pygame.Surface((7, 12), pygame.SRCALPHA)
-        render._draw_player_sprite(surf, 3, 6, team, walking, frame)
+        render._draw_player_sprite(surf, 3, 6, team, walking, frame, variant)
         _sprite_cache[key] = surf
     return _sprite_cache[key]
 
@@ -285,8 +290,9 @@ def _entity_drawables(cam, state):
         w, h = max(3, int(7 * k)), max(5, int(12 * k))
         walking = p in moving
         bob = 0 if walking else int(k) * (((ticks // 600) + idx) % 2)
-        sprite = _scaled(_player_sprite(p.team, walking, walk_frame),
-                         w, h, ("player", p.team, walking, walk_frame))
+        variant = idx % render.SPRITE_VARIANTS
+        sprite = _scaled(_player_sprite(p.team, walking, walk_frame, variant),
+                         w, h, ("player", p.team, walking, walk_frame, variant))
         w, h = sprite.get_size()
         shadow = _soft_ellipse_shadow(max(4, int(w * 1.1)), max(2, int(w * 0.4)))
         is_carrier = p.is_ball_carrier

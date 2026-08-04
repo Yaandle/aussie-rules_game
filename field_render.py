@@ -30,7 +30,11 @@ def _entity_drawables(cam, gs):
     items = []
     ticks = pygame.time.get_ticks()
     walk_frame = (ticks // 160) % 2
-    sprite_world_h = 4.0 * settings.HERO_SPRITE_SCALE
+    # FULL GAME / SCENARIOS get their own sprite-scale knob (see
+    # settings.MAIN_SPRITE_SCALE) instead of sharing Hero mode's — up to
+    # 36 bodies on screen at once reads as a mush of overlapping
+    # guernseys at Hero's size, so this mode's sprites run a bit smaller.
+    sprite_world_h = 4.0 * settings.MAIN_SPRITE_SCALE
 
     for idx, p in enumerate(gs.players):
         proj = cam.project(p.x, p.y, 0.0)
@@ -40,10 +44,11 @@ def _entity_drawables(cam, gs):
         k = sprite_world_h * scale / 12.0
         walking = gs.carrier_moving and p.is_ball_carrier
         bob = 0 if walking else int(k) * (((ticks // 600) + idx) % 2)
+        variant = idx % overlays.SPRITE_VARIANTS
         sprite = hero_render._scaled(
-            hero_render._player_sprite(p.team, walking, walk_frame),
+            hero_render._player_sprite(p.team, walking, walk_frame, variant),
             max(3, int(7 * k)), max(5, int(12 * k)),
-            ("player", p.team, walking, walk_frame))
+            ("player", p.team, walking, walk_frame, variant))
         w, h = sprite.get_size()
         shadow = hero_render._soft_ellipse_shadow(max(4, int(w * 1.1)),
                                                   max(2, int(w * 0.4)))

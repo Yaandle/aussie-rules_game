@@ -353,14 +353,33 @@ def _background():
 
 # ── Dynamic entities (logical resolution, redrawn per frame) ────────
 
-def _draw_player_sprite(surface, x, y, team, walking, walk_frame):
+# Sprite variants: a small, deterministic mix of hairstyle x build x idle
+# stance (2 x 2 x 2) so a big crowd of chibis doesn't read as one cloned
+# silhouette copy-pasted 36 times. Callers pick a variant from a stable
+# per-player key (list index) — never randomly per frame, so a given
+# player keeps the same look for the whole match. variant 0 reproduces
+# the original single sprite exactly, so anything that doesn't care still
+# gets the same look as before.
+SPRITE_VARIANTS = 8
+
+
+def _draw_player_sprite(surface, x, y, team, walking, walk_frame, variant=0):
     """Chibi sprite, 7 wide x 12 tall: big dark mop, side-shaded guernsey.
 
     Reference proportions — the head is nearly half the body. The 3D feel
     comes entirely from lighting: every surface is lit from the upper-left,
     so the right column of hair, skin, and guernsey sits one shade darker
     and the upper-left hair pixels catch the sun.
+
+    `variant` (0-7, see SPRITE_VARIANTS) decodes to three restrained bits
+    of per-player variety — a couple of extra pixels, not a costume
+    system: which side the fringe is parted on, a stockier shoulder line,
+    and (while standing still) a squared-up vs. relaxed stance.
     """
+    hair_style = variant & 1
+    stocky = (variant >> 1) & 1
+    stance = (variant >> 2) & 1
+
     hair = pygame.Color(settings.HAIR)
     hair_lit = _lighten(settings.HAIR, 0.22)
     skin = pygame.Color(settings.SKIN)
@@ -371,10 +390,14 @@ def _draw_player_sprite(surface, x, y, team, walking, walk_frame):
     boot = pygame.Color(settings.SHORTS)
 
     # The mop: rounded and oversized, sun catching the upper-left curve.
-    pygame.draw.rect(surface, hair, (x - 1, y - 6, 3, 1))
+    # The alt style shifts the fringe row (and its highlight) one pixel
+    # left, reading as a side part — same row coverage underneath it, so
+    # there's never a gap or a stray disconnected pixel.
+    top_x = x - 1 if hair_style == 0 else x - 2
+    pygame.draw.rect(surface, hair, (top_x, y - 6, 3, 1))
     pygame.draw.rect(surface, hair, (x - 2, y - 5, 5, 1))
     pygame.draw.rect(surface, hair, (x - 3, y - 4, 7, 2))
-    surface.set_at((x - 1, y - 6), hair_lit)
+    surface.set_at((top_x, y - 6), hair_lit)
     surface.set_at((x - 2, y - 5), hair_lit)
     surface.set_at((x - 3, y - 4), hair_lit)
 
@@ -387,7 +410,12 @@ def _draw_player_sprite(surface, x, y, team, walking, walk_frame):
     surface.set_at((x + 1, y - 1), skin_sh)
 
     # Guernsey: shoulders, then torso with bare arms; right side shaded.
-    pygame.draw.rect(surface, body, (x - 2, y, 5, 1))
+    # A stockier build widens the shoulder row by a pixel — the smallest
+    # change that still reads as a different build at this scale.
+    if stocky:
+        pygame.draw.rect(surface, body, (x - 3, y, 6, 1))
+    else:
+        pygame.draw.rect(surface, body, (x - 2, y, 5, 1))
     surface.set_at((x, y), stripe)
     surface.set_at((x + 2, y), body_sh)
     surface.set_at((x - 3, y + 1), skin)                    # arms
@@ -401,7 +429,10 @@ def _draw_player_sprite(surface, x, y, team, walking, walk_frame):
 
     pygame.draw.rect(surface, pygame.Color(settings.SHORTS), (x - 1, y + 3, 3, 1))
 
-    # Legs and boots — the two-frame stride lifts alternate feet.
+    # Legs and boots — the two-frame stride lifts alternate feet. Idle
+    # players use `stance` to settle into one of two resting poses
+    # (reusing the same lifted-heel pixels as the walk cycle) instead of
+    # a single identical plant repeated across the whole roster.
     surface.set_at((x - 1, y + 4), skin)
     surface.set_at((x + 1, y + 4), skin_sh)
     if walking and walk_frame == 0:
@@ -410,9 +441,12 @@ def _draw_player_sprite(surface, x, y, team, walking, walk_frame):
     elif walking:
         surface.set_at((x + 1, y + 5), boot)     # right planted, left lifted
         surface.set_at((x - 1, y + 4), boot)
-    else:
-        surface.set_at((x - 1, y + 5), boot)
+    elif stance == 0:
+        surface.set_at((x - 1, y + 5), boot)     # squared up
         surface.set_at((x + 1, y + 5), boot)
+    else:
+        surface.set_at((x - 1, y + 5), boot)     # relaxed, trailing foot lifted
+        surface.set_at((x + 1, y + 4), boot)
 
 
 # ── Scoreboards & HUD (display resolution) ──────────────────────────
