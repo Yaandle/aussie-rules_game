@@ -33,7 +33,11 @@ def _render_scene(display, state):
         return
     sx, sy, scale, depth = proj
 
-    sprite_world_h = 4.0 * settings.CHARACTER_SPRITE_SCALE * state.height
+    # Height is stored/displayed in real cm (see character_state.py); the
+    # baseline cm maps to a 1.0 scale multiplier, everything else scales
+    # proportionally from there.
+    height_mult = state.height / settings.CHARACTER_HEIGHT_BASELINE_CM
+    sprite_world_h = 4.0 * settings.CHARACTER_SPRITE_SCALE * height_mult
     k = sprite_world_h * scale / 12.0
     w, h = max(3, int(7 * k)), max(5, int(12 * k))
 
@@ -54,14 +58,37 @@ def _render_scene(display, state):
 
 # ── Attributes panel ─────────────────────────────────────────────────
 
-def _row_value_text(state, row):
-    """The muted 'tagline' line under a selected, unlocked row — the
-    live value in place of a scenario's descriptive blurb."""
+BAR_W = 110   # fillable stat-meter rectangle, right-aligned on each
+BAR_H = 14    # adjustable row's own line (see _render_panel)
+
+
+def _stat_range(row):
+    """(min, max) for an adjustable row's live value, or None when locked."""
     if row["key"] == "speed":
-        return f"{state.speed:.1f}  ·  LEFT / RIGHT TO ADJUST"
+        return settings.CHARACTER_SPEED_MIN, settings.CHARACTER_SPEED_MAX
     if row["key"] == "height":
-        return f"{state.height:.2f}x  ·  LEFT / RIGHT TO ADJUST"
+        return settings.CHARACTER_HEIGHT_MIN, settings.CHARACTER_HEIGHT_MAX
     return None
+
+
+def _stat_value_text(state, row):
+    if row["key"] == "speed":
+        return f"{state.speed:.1f}"
+    if row["key"] == "height":
+        return f"{state.height:.0f} CM"
+    return ""
+
+
+def _draw_stat_bar(display, x, y, frac, fill_color, border_color):
+    """A small rectangle stat meter: dark track, filled left-to-right by
+    `frac` (0..1) as the value moves through its min/max range."""
+    rect = pygame.Rect(x, y, BAR_W, BAR_H)
+    pygame.draw.rect(display, (20, 22, 16), rect)
+    fill_w = int((BAR_W - 4) * max(0.0, min(1.0, frac)))
+    if fill_w > 0:
+        pygame.draw.rect(display, fill_color,
+                         (rect.x + 2, rect.y + 2, fill_w, BAR_H - 4))
+    pygame.draw.rect(display, border_color, rect, 2)
 
 
 def _render_panel(display, state):
@@ -99,10 +126,21 @@ def _render_panel(display, state):
         label = font.render(text, True, color)
         display.blit(label, (box.x + 30, y))
 
-        if selected and not locked:
-            value = font_small.render(_row_value_text(state, row), True, muted)
-            display.blit(value, (box.x + 38, y + 24))
-            y += 22
+        # Adjustable rows show their live value on the same line,
+        # right-aligned: a numeric readout next to a fillable stat bar
+        # instead of a muted tagline underneath.
+        if not locked:
+            vmin, vmax = _stat_range(row)
+            value = state.speed if row["key"] == "speed" else state.height
+            frac = (value - vmin) / (vmax - vmin) if vmax > vmin else 0.0
+            bar_x = box.right - 30 - BAR_W
+            bar_y = y + (label.get_height() - BAR_H) // 2
+            bar_col = gold if selected else cream
+            _draw_stat_bar(display, bar_x, bar_y, frac, bar_col, ink)
+
+            val_text = font_small.render(_stat_value_text(state, row), True, muted)
+            display.blit(val_text, (bar_x - 10 - val_text.get_width(),
+                                    y + (label.get_height() - val_text.get_height()) // 2))
         y += 40
 
     footer = font_small.render("ARROWS · ENTER ADJUST · ESC BACK", True, muted)
