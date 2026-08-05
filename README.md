@@ -28,6 +28,7 @@ python main.py
 | 1 / Q | Handball to the nearest teammate in range |
 | 2 / K | Aim a kick, click to release |
 | 3 / Space | Bounce the ball (required every 15m of running) |
+| Tab | Switch controlled player (while defending) |
 | M / Esc | Open the controls menu |
 | Backspace (in menu) | Quit to main menu |
 

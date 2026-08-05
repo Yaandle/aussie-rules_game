@@ -219,6 +219,20 @@ class GameState:
         self.ai_hold_timer = 0.0
         self.contest_cooldown = 0.0
         self._contest_direction_queue = []
+        # A >MARK_STAND_MIN_DISTANCE mark freezes the nearest opponent in
+        # place and protects the marker from a tackle trigger for
+        # MARK_HOLD_DURATION seconds — see _start_standing_mark, decremented
+        # once per frame in update() alongside contest_cooldown, and
+        # consulted by both the defender-chase call site (update()) and
+        # possession.find_tackle_trigger. None when no mark is being held.
+        self.standing_mark = None
+        # Who the human is currently steering — the ball carrier whenever
+        # YELLOW holds it, or a chosen defender otherwise (see
+        # _update_controlled_player / _switch_controlled_player). Reset
+        # fresh on every load/kickoff so a stale reference from a previous
+        # spell can't survive into the new one.
+        self.controlled_player = None
+        self._was_carrying = False
         # Both classic modes share AFL Hero's diorama presentation, but use
         # their own camera tuning (settings.MAIN_CAM_*) for a slightly more
         # vertical, more fixed "broadcast" feel that differs from Hero mode.
@@ -497,7 +511,9 @@ class GameState:
                     self.menu_screen = SCREEN_ROOT
                     self.menu_index = 0
                 return
-            if event.key in (pygame.K_1, pygame.K_q):
+            if event.key == pygame.K_TAB:
+                self._switch_controlled_player()
+            elif event.key in (pygame.K_1, pygame.K_q):
                 self._attempt_handball()
             elif event.key in (pygame.K_2, pygame.K_k):
                 if (self.carrier is not None and self.carrier.team == settings.YELLOW
@@ -654,7 +670,8 @@ class GameState:
         carrier = self.carrier
         if carrier is None or self.ball.in_flight:
             return
-        if carrier.distance_to(target_point) > settings.KICK_MAX_RANGE:
+        kick_distance = carrier.distance_to(target_point)
+        if kick_distance > settings.KICK_MAX_RANGE:
             self._show_message("TOO FAR")
             return
 
@@ -683,8 +700,15 @@ class GameState:
                                      key=lambda p: p.distance_to(target_point))[:2]
                 self._pending_outcome = {"type": "contest", "candidates": nearest_two}
             elif outcome["winner"].team == carrier.team:
+                # is_mark flags a clean, uncontested mark specifically
+                # (result == "mark") rather than any possession-type
+                # outcome — a successful handball also resolves to
+                # {"type": "possession", ...} (see _attempt_handball) and
+                # must never trigger stand-the-mark.
                 self._pending_outcome = {"type": "possession",
-                                         "player": outcome["winner"]}
+                                         "player": outcome["winner"],
+                                         "is_mark": outcome["result"] == "mark",
+                                         "kick_distance": kick_distance}
             else:
                 self._pending_outcome = {"type": "turnover",
                                          "player": outcome["winner"]}
@@ -748,6 +772,12 @@ class GameState:
             self._time_expired()
             return
 
+        # Refresh who the human is steering before reading input for this
+        # frame (see _update_controlled_player) — must happen before
+        # _update_movement below, otherwise input would always drive
+        # last frame's controlled_player instead of this frame's.
+        self._update_controlled_player()
+
         # Human carrier: keyboard/controller polling (_update_movement
         # no-ops for a RED carrier). AI carrier: ai_control's placeholder
         # loop (no-ops for a YELLOW carrier) — see its HOOK comment for
@@ -776,12 +806,33 @@ class GameState:
             # "chasing" its own teammate).
             defending_team = self.opponents if carrier.team == settings.YELLOW else self.teammates
             carrying_teammates = self.teammates if carrier.team == settings.YELLOW else self.opponents
-            mechanics.update_defenders(defending_team, carrier.pos, dt, home)
+            # A defender currently standing the mark (see standing_mark /
+            # _start_standing_mark) is frozen — excluded from the chase
+            # entirely for the duration, same as a resting off-ball
+            # teammate is excluded below. The human's controlled_player is
+            # also excluded here whenever it's a defending-side player
+            # (i.e. YELLOW is NOT carrying) — update_defenders drives both
+            # the active chase step AND (via its own internal
+            # update_off_ball call, see mechanics.py) the off-ball drift
+            # for non-chasing defenders, so it must never touch whichever
+            # defender the human is currently steering, or input and
+            # auto-drift would fight over the same player every frame.
+            standing_defender = self.standing_mark["defender"] if self.standing_mark else None
+            excluded_defender = (self.controlled_player
+                                 if self.controlled_player in defending_team else None)
+            chasing = [d for d in defending_team
+                      if d is not standing_defender and d is not excluded_defender]
+            mechanics.update_defenders(chasing, carrier.pos, dt, home)
             if home is not None:
-                resting = [t for t in carrying_teammates if not t.is_ball_carrier]
+                resting = [t for t in carrying_teammates
+                          if not t.is_ball_carrier and t is not self.controlled_player]
                 mechanics.update_off_ball(resting, home, carrier.pos, dt)
 
         self.contest_cooldown = max(0.0, self.contest_cooldown - dt)
+        if self.standing_mark is not None:
+            self.standing_mark["timer"] -= dt
+            if self.standing_mark["timer"] <= 0.0:
+                self.standing_mark = None
 
         # A defender closing to tackle range starts a live contest
         # instead of holding at arm's length forever (see
@@ -914,16 +965,21 @@ class GameState:
         self.result = "fulltime" if self.game_mode == "full" else "fail"
 
     def _update_movement(self, dt):
-        """Poll held keys to move the carrier; enforce the running-bounce rule.
+        """Poll held keys to move the controlled player; enforce the
+        running-bounce rule against whoever is actually carrying.
 
-        Human (YELLOW) carrier only — an AI (RED) carrier is driven by
-        ai_control.decide_next_action instead (see update()), so this
-        no-ops rather than reading keyboard/controller input into
-        whichever player happens to be carrying.
+        Human (YELLOW) controlled_player only — an AI (RED) carrier is
+        driven by ai_control.decide_next_action instead (see update()),
+        so this no-ops rather than reading keyboard/controller input into
+        a RED player. controlled_player is the ball carrier whenever
+        YELLOW holds it (unchanged behavior) or a chosen defender while
+        YELLOW doesn't (see _update_controlled_player /
+        _switch_controlled_player) — either way this is the one player
+        keyboard/controller input drives this frame.
         """
-        carrier = self.carrier
+        moved_player = self.controlled_player
         self.carrier_moving = False
-        if carrier is None or carrier.team != settings.YELLOW:
+        if moved_player is None or moved_player.team != settings.YELLOW:
             return
         keys = pygame.key.get_pressed()
         cdx, cdy = controller.direction()   # Xbox D-pad / left stick
@@ -942,17 +998,69 @@ class GameState:
         if self.game_mode == "full":
             speed = (self.character.applied_speed if self.character is not None
                      else settings.FULL_GAME_PLAYER_SPEED)
-        moved = carrier.move(dx, dy, dt, speed=speed)
+        moved = moved_player.move(dx, dy, dt, speed=speed)
+        # carrier_moving/the bounce-rule only mean anything for the actual
+        # ball carrier — moving a non-carrying defender around never
+        # accrues run-since-bounce or triggers the "ran too far" turnover.
+        if not moved_player.is_ball_carrier:
+            return
         self.carrier_moving = moved > 0.0
         self.run_since_bounce += moved
 
         # Running too far past the bounce limit is a turnover.
         if self.run_since_bounce >= settings.BOUNCE_INTERVAL * 1.5:
-            nearest = min(self.opponents, key=lambda o: o.distance_to(carrier.pos))
+            nearest = min(self.opponents, key=lambda o: o.distance_to(moved_player.pos))
             self._give_possession(nearest)
             self._show_message("RAN TOO FAR - TURNOVER")
             self.mode = MODE_IDLE
             self._register_turnover()
+
+    def _update_controlled_player(self):
+        """Keep self.controlled_player pointing at the right YELLOW player.
+
+        While YELLOW holds the ball, it's always the carrier (today's
+        unchanged behavior — regaining the ball, e.g. by gathering a mark
+        or winning a contest, means they simply become the carrier and
+        controlled_player already points at them via this branch, no
+        special-casing needed). While YELLOW doesn't hold it, it stays
+        exactly as the human left it (via _switch_controlled_player)
+        across frames — except on the single frame defense is first
+        entered (tracked by _was_carrying), where it resets to the
+        nearest teammate to the ball so a stale reference from a previous
+        defensive spell, or None on the very first frame, doesn't linger.
+        """
+        carrier = self.carrier
+        yellow_carrying = carrier is not None and carrier.team == settings.YELLOW
+        if yellow_carrying:
+            self.controlled_player = carrier
+        else:
+            entering_defense = self._was_carrying or self.controlled_player is None
+            if entering_defense:
+                ball_pos = self.ball.pos
+                self.controlled_player = min(self.teammates,
+                                             key=lambda t: t.distance_to(ball_pos))
+        self._was_carrying = yellow_carrying
+
+    def _switch_controlled_player(self):
+        """Cycle control to another YELLOW teammate, nearest-next by
+        distance to the ball. Only meaningful while YELLOW doesn't hold
+        the ball — switching the human's own ball carrier away from
+        themselves doesn't apply (matches the FIFA/NBA "play now" style
+        this is modelled on: you always drive the ball carrier directly).
+        """
+        carrier = self.carrier
+        if carrier is not None and carrier.team == settings.YELLOW:
+            return
+        teammates = self.teammates
+        if len(teammates) < 2:
+            return
+        ball_pos = self.ball.pos
+        ordered = sorted(teammates, key=lambda t: t.distance_to(ball_pos))
+        if self.controlled_player not in ordered:
+            self.controlled_player = ordered[0]
+            return
+        idx = ordered.index(self.controlled_player)
+        self.controlled_player = ordered[(idx + 1) % len(ordered)]
 
     # ── Outcome application ─────────────────────────────────────────
 
@@ -964,6 +1072,8 @@ class GameState:
 
         if outcome["type"] == "possession":
             self._give_possession(outcome["player"])
+            if outcome.get("is_mark") and outcome.get("kick_distance", 0.0) > settings.MARK_STAND_MIN_DISTANCE:
+                self._start_standing_mark(outcome["player"])
 
         elif outcome["type"] == "turnover":
             self._give_possession(outcome["player"])
@@ -1061,6 +1171,24 @@ class GameState:
         self.ball.give_to(player)
         self.possession_state = possession.HELD_PLAYER
         self.run_since_bounce = 0.0
+
+    def _start_standing_mark(self, marker):
+        """A mark taken from beyond MARK_STAND_MIN_DISTANCE freezes the
+        nearest opponent to the marker at their current spot and shields
+        the marker from a tackle trigger, both for MARK_HOLD_DURATION
+        seconds (see settings.py). No-ops if the marker's team has no
+        opponents on field (can't happen in practice, but keeps this
+        symmetric/safe the way _give_possession's callers already are)."""
+        opposing = self.opponents if marker.team == settings.YELLOW else self.teammates
+        if not opposing:
+            self.standing_mark = None
+            return
+        defender = min(opposing, key=lambda o: o.distance_to(marker.pos))
+        self.standing_mark = {
+            "marker": marker,
+            "defender": defender,
+            "timer": settings.MARK_HOLD_DURATION,
+        }
 
     def _start_contest(self, participants, kind):
         """Freeze play and begin a tackle/50-50 reaction contest between

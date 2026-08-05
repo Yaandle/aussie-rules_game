@@ -463,7 +463,7 @@ def _render_menu(display):
 
     display.blit(_dim(160), (0, 0))
 
-    box = pygame.Rect(0, 0, 600, 396)
+    box = pygame.Rect(0, 0, 600, 434)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
     shadow = _soft_shadow(box.w, box.h)
     display.blit(shadow, (box.x - (shadow.get_width() - box.w) // 2,
@@ -478,6 +478,7 @@ def _render_menu(display):
             (controller.key_label("1 / Q", "X"), "HANDBALL"),
             (controller.key_label("2 / K", "LT"), "KICK — CLICK TO AIM"),
             (controller.key_label("3 / SPACE", "RB"), "BOUNCE"),
+            (controller.key_label("TAB", "Y"), "SWITCH PLAYER (DEFENSE)"),
             (controller.key_label("ESC", "B"), "CANCEL AIM / MENU"),
             (controller.key_label("M", "START"), "OPEN · CLOSE MENU"),
             ("BACKSPACE", "QUIT TO MAIN MENU"))

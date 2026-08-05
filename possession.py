@@ -48,6 +48,14 @@ def find_tackle_trigger(game_state):
     carrier = game_state.carrier
     if carrier is None:
         return None
+    # A carrier currently protected by stand-the-mark (see
+    # GameState.standing_mark / _start_standing_mark) is immune to a
+    # tackle trigger for the hold's duration — the nearest opponent is
+    # frozen at the mark anyway (see update()'s defender-chase exclusion),
+    # so this only matters for a *different* opponent closing in.
+    standing_mark = getattr(game_state, "standing_mark", None)
+    if standing_mark is not None and standing_mark["marker"] is carrier:
+        return None
     opposing = (game_state.opponents if carrier.team == settings.YELLOW
                 else game_state.teammates)
     if not opposing:

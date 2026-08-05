@@ -60,9 +60,11 @@ from pygame._sdl2 import controller as _sdl
 BTN_A = pygame.CONTROLLER_BUTTON_A
 BTN_B = pygame.CONTROLLER_BUTTON_B
 BTN_X = pygame.CONTROLLER_BUTTON_X
-# Y and Back exist on the pad but nothing in this game binds them (Y's
-# old kick-aim job moved to LT — see _BUTTON_KEYS below); left out here
-# rather than defined-and-unused.
+BTN_Y = pygame.CONTROLLER_BUTTON_Y  # switch controlled player (see _BUTTON_KEYS) —
+                                     # was deliberately unbound since kick-aim entry
+                                     # moved to LT; Back still exists on the pad but
+                                     # nothing binds it, left out rather than
+                                     # defined-and-unused.
 BTN_LB = pygame.CONTROLLER_BUTTON_LEFTSHOULDER
 BTN_RB = pygame.CONTROLLER_BUTTON_RIGHTSHOULDER
 BTN_START = pygame.CONTROLLER_BUTTON_START
@@ -105,16 +107,19 @@ _debug_timer = 0.0
 # RETURN or SPACE; bounce is 3 or SPACE; GOAL KICKING confirm is SPACE or
 # RETURN) so this one table covers every screen with no special-casing.
 #
-# Y is deliberately unbound: kick-aim entry moved to LT (see
-# _TRIGGER_KEYS below) so aiming can be a natural "hold LT, steer with
-# the right stick, pull RT to confirm" gesture instead of a face button.
-# A still also confirms a kick (via K_RETURN, same as RT) — left in
-# place rather than removed since redundant bindings are already this
-# project's convention (SPACE/RETURN are doubled up in several places).
+# Kick-aim entry moved to LT (see _TRIGGER_KEYS below) so aiming can be
+# a natural "hold LT, steer with the right stick, pull RT to confirm"
+# gesture instead of a face button — that freed Y up for switch-player
+# (FIFA/NBA "play now" style defensive control switching; see
+# GameState._switch_controlled_player). A still also confirms a kick
+# (via K_RETURN, same as RT) — left in place rather than removed since
+# redundant bindings are already this project's convention (SPACE/RETURN
+# are doubled up in several places).
 _BUTTON_KEYS = {
     BTN_A: pygame.K_RETURN,     # confirm / select / confirm kick target
     BTN_B: pygame.K_ESCAPE,     # back / cancel / pause
     BTN_X: pygame.K_1,          # handball
+    BTN_Y: pygame.K_TAB,        # switch controlled player
     BTN_RB: pygame.K_SPACE,     # bounce / confirm
     BTN_LB: pygame.K_c,         # character menu toggle
     BTN_START: pygame.K_m,      # pause / controls overlay

@@ -146,6 +146,12 @@ CONTEST_COOLDOWN = 1.2       # seconds after a contest resolves before another c
                               # without this, a resolved tackle's still-adjacent participants
                               # would restart another contest on the very next eligible frame)
 
+# ── Mark / stand-the-mark (see GameState.standing_mark, possession.py) ──
+MARK_STAND_MIN_DISTANCE = 15.0  # a kick landing as a mark past this distance
+                                  # triggers stand-the-mark; short marks don't
+MARK_HOLD_DURATION = 5.0        # seconds the marker is tackle-immune and the
+                                  # nearest defender is frozen at the mark
+
 # Tackle/50-50 reaction minigame tuning — one place to balance, see
 # contest_minigame.py. Miss policy is deliberately configurable rather
 # than hardcoded (see contest_minigame._miss).
