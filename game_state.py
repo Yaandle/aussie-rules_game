@@ -253,7 +253,14 @@ class GameState:
             self.phase = PHASE_MENU
             return
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            self._request_close_character()
+            # On the main attributes screen, ESC closes the whole menu;
+            # on any screen nested under it (roster / naming / the save
+            # prompt), ESC steps back one level instead (see
+            # CharacterState.back()).
+            if self.character.screen == "attributes":
+                self._request_close_character()
+            else:
+                self.character.back()
             return
         self.character.handle_input(event)
 
@@ -303,12 +310,18 @@ class GameState:
         binding (see _playing_input / GoalKickState.handle_input).
         """
         if event.type == pygame.KEYDOWN and event.key == pygame.K_c:
-            if self.phase == PHASE_CHARACTER:
-                self._request_close_character()
-                return
-            if self.phase in (PHASE_MENU, PHASE_PLAYING):
-                self._open_character()
-                return
+            # While typing a new saved player's name, "C" is a letter to
+            # type, not the menu hotkey — let it fall through to the
+            # normal PHASE_CHARACTER dispatch below instead of closing.
+            naming = (self.phase == PHASE_CHARACTER and self.character is not None
+                     and self.character.screen == "naming")
+            if not naming:
+                if self.phase == PHASE_CHARACTER:
+                    self._request_close_character()
+                    return
+                if self.phase in (PHASE_MENU, PHASE_PLAYING):
+                    self._open_character()
+                    return
 
         if self.phase == PHASE_MENU:
             self._menu_input(event)
@@ -637,11 +650,13 @@ class GameState:
         # FULL GAME runs at its own (slower) pace than SCENARIOS — see
         # settings.FULL_GAME_PLAYER_SPEED and entities.Player.move's speed
         # override. The character menu's Speed stat (character_state.py)
-        # adjusts this live, so a CharacterState's current value wins over
-        # the settings default once one exists.
+        # can move this live, but only once its SAVE action commits the
+        # draft into applied_speed (see CharacterState._commit_save) — so
+        # tweaking the slider mid-edit doesn't change gameplay until you
+        # actually save it, matching the "ALL PLAYERS" apply mode.
         speed = None
         if self.game_mode == "full":
-            speed = (self.character.speed if self.character is not None
+            speed = (self.character.applied_speed if self.character is not None
                      else settings.FULL_GAME_PLAYER_SPEED)
         moved = carrier.move(dx, dy, dt, speed=speed)
         self.carrier_moving = moved > 0.0
