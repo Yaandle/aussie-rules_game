@@ -110,13 +110,27 @@ SLOWMO_FACTOR = 0.25      # time dilation while lining up a kick
 # ── Defender AI ─────────────────────────────────────────────────────
 DEFENDER_SPEED    = 9.0   # closing defenders converge at this speed
 CHASE_RADIUS      = 38.0  # defenders further than this stay home
-DEFENDER_MIN_DIST = 4.0   # they hold off at arm's length (no tackling yet)
+DEFENDER_MIN_DIST = 7.0   # they hold off at arm's length (no tackling yet) —
+                           # kept comfortably outside TACKLE_TRIGGER_RADIUS
+                           # (see below) so a defender's normal resting
+                           # distance doesn't itself sit inside tackle range;
+                           # bumped from 4.0, which left only a 0.5-unit gap
+                           # to TACKLE_TRIGGER_RADIUS (4.5) — practically no
+                           # buffer, so a contest fired almost as soon as a
+                           # defender arrived at all
 MAX_CHASERS       = 2     # how many defenders pressure at once
 
 # Off-ball shape (FULL GAME only — scenarios keep their original fully
 # static non-chasers, so hand-tuned puzzle moments don't drift).
 OFF_BALL_SPEED = 5.0   # well under DEFENDER_SPEED: repositioning, not chasing
 OFF_BALL_DRIFT = 0.30  # 0..1 lean from formation "home" spot toward the ball
+
+# Minimum gap kept between any two players' logical positions (see
+# mechanics.separate_players, called once per frame from GameState.update)
+# so one sprite can never fully hide another on screen. Deliberately well
+# under TACKLE_TRIGGER_RADIUS (3.5) so it never gets in the way of a
+# legitimate tackle contest actually triggering.
+PLAYER_MIN_SEPARATION = 2.2
 
 # ── Probability model ───────────────────────────────────────────────
 PRESSURE_RADIUS      = 20.0  # opponent within this range applies pressure
@@ -138,8 +152,12 @@ BOUNCE_TICK_DURATION = 0.4   # seconds the bounce tick mark is visible
 # feed into any of these yet (see each HOOK comment at the call site).
 AI_HOLD_TIMEOUT = 3.0        # seconds an AI carrier runs before auto-kicking
                               # HOOK: future tendency/attribute-driven timing
-TACKLE_TRIGGER_RADIUS = 4.5  # defender this close to the carrier starts a tackle contest
-                              # (just past DEFENDER_MIN_DIST's arm's-length stop point)
+TACKLE_TRIGGER_RADIUS = 3.5  # defender this close to the carrier starts a tackle contest —
+                              # deliberately inside DEFENDER_MIN_DIST (7.0) now, so a defender
+                              # holding at their normal arm's-length stop point does NOT sit
+                              # inside tackle range by default; a tackle only fires when the
+                              # carrier is actively moved toward the defender (or vice versa)
+                              # past that arm's-length gap, not as a matter of course
                               # HOOK: future positioning/timing/attributes narrow or widen this
 CONTEST_COOLDOWN = 1.2       # seconds after a contest resolves before another can trigger
                               # for the same pairing (see GameState._separate_after_contest —

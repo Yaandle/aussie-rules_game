@@ -80,6 +80,40 @@ def update_off_ball(players, home_positions, focus_pos, dt):
         _step_toward(p, (tx, ty), settings.OFF_BALL_SPEED, dt, stop_at=1.0)
 
 
+def separate_players(players, min_dist):
+    """Push any two players standing closer than `min_dist` apart to
+    exactly that distance, both clamped back inside the oval.
+
+    Nothing in this project's movement gives players a physical body —
+    Player.move, update_defenders, and update_off_ball all clamp only
+    against the field boundary, never against each other — so two
+    players (most visibly an attacker and the defender marking them)
+    can end up standing on almost the same spot. Visually that reads as
+    one sprite completely hiding the other, with no gap or outline to
+    show anyone's underneath, until their paths diverge again.
+
+    A simple O(n^2) pairwise resolve, run once per frame after movement
+    (see GameState.update) — this roster tops out at 32 players, so the
+    cost is negligible, and a single pass is enough since these are soft
+    pushes rather than a rigid-body solver: any residual overlap left by
+    one pair's push (rare, since MAX_CHASERS keeps close-contact groups
+    small) resolves further on the next frame instead of needing an
+    iterative solve.
+    """
+    for i, a in enumerate(players):
+        for b in players[i + 1:]:
+            dx, dy = b.x - a.x, b.y - a.y
+            dist = math.hypot(dx, dy)
+            if dist >= min_dist:
+                continue
+            if dist < 0.01:
+                dx, dy, dist = 1.0, 0.0, 1.0
+            push = (min_dist - dist) / 2
+            ux, uy = dx / dist, dy / dist
+            a.x, a.y = clamp_to_oval(a.x - ux * push, a.y - uy * push)
+            b.x, b.y = clamp_to_oval(b.x + ux * push, b.y + uy * push)
+
+
 def calculate_pressure(ball_carrier, opponents):
     """Pressure on the carrier, 0.0 (free) to 1.0 (smothered).
 

@@ -828,6 +828,18 @@ class GameState:
                           if not t.is_ball_carrier and t is not self.controlled_player]
                 mechanics.update_off_ball(resting, home, carrier.pos, dt)
 
+        # Push apart any two players left standing closer than
+        # PLAYER_MIN_SEPARATION after this frame's movement — nothing
+        # above gives players a physical body of their own (every mover
+        # only clamps against the field oval), so an attacker and their
+        # marking defender in particular could otherwise end up on
+        # almost the same spot, with one sprite fully hiding the other
+        # until they happened to drift apart again. Deliberately smaller
+        # than TACKLE_TRIGGER_RADIUS so it never blocks a real tackle
+        # contest from triggering (see possession.find_tackle_trigger
+        # below) — this only stops full visual overlap, not proximity.
+        mechanics.separate_players(self.players, settings.PLAYER_MIN_SEPARATION)
+
         self.contest_cooldown = max(0.0, self.contest_cooldown - dt)
         if self.standing_mark is not None:
             self.standing_mark["timer"] -= dt
