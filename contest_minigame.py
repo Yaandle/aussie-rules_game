@@ -1,4 +1,14 @@
-"""contest_minigame.py — reaction-based tackle / 50-50 contest.
+"""contest_minigame.py — reaction-based loose-ball / 50-50 / ruck contest.
+
+Tackles used to run through here too ("kind" could be "tackle") but no
+longer do — see GameState._resolve_tackle_now / mechanics.resolve_tackle,
+which judge a tackle instantly against match-rule state (how long the
+carrier has held the ball) instead of racing it, since a stat-driven
+"almost random" break-tackle roll isn't something either player being
+faster on the buttons should decide. This module still owns every
+contest kind where nobody's holding-the-ball status is in question: a
+kick landing in a pack ("loose_ball") and a boundary ball-up
+("ruck" — see GameState._start_ruck_contest).
 
 Self-contained: FULL GAME and SCENARIOS both call start()/update() the
 same way, passing in who's contesting and reading the result back off

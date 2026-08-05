@@ -274,7 +274,14 @@ def _render_contest(display, gs):
         pygame.draw.polygon(display, glyph,
                             _CONTEST_ARROW_POINTS[direction](*rect.center, slot * 0.22))
 
-    label = "TACKLE!" if contest.kind == "tackle" else "50/50 BALL!"
+    if contest.kind == "ruck":
+        label = "BALL UP!"
+    elif contest.kind == "tackle":
+        label = "TACKLE!"   # dead code today (tackles resolve instantly —
+                              # see GameState._resolve_tackle_now), kept as
+                              # a harmless fallback rather than deleted
+    else:
+        label = "50/50 BALL!"
     title = hero_render._text("s", label, cream)
     display.blit(title, (settings.WINDOW_W // 2 - title.get_width() // 2, top - 22))
 

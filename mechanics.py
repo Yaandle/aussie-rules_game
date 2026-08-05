@@ -206,6 +206,34 @@ def resolve_contest(target_point, nearby_players):
     return random.choices(nearby_players, weights=weights, k=1)[0]
 
 
+def resolve_tackle(held_duration):
+    """Resolve a tackle instantly (no reaction minigame — see settings.py's
+    "Tackle resolution" block for the full rule rationale).
+
+    Returns one of:
+      "no_prior_opportunity" — held_duration hasn't reached
+                                PRIOR_OPPORTUNITY_GRACE yet: the carrier
+                                hasn't had a real chance to dispose, so
+                                this is a neutral ball-up, nobody's fault.
+      "broken"                — past the grace window, but the carrier
+                                 won the (currently almost-random)
+                                 break-tackle roll and keeps the ball.
+      "holding_the_ball"       — past the grace window and lost the roll:
+                                 free kick to the tackler.
+
+    HOOK: TACKLE_BREAK_CHANCE is a flat placeholder probability — a
+    future strength/agility/tackling-attribute system would compute this
+    per matchup (tackler vs. carrier) instead of one constant for
+    everyone, the same way AI_HOLD_TIMEOUT and CONTEST_AI_REACTION_RANGE
+    already flag as future attribute hooks elsewhere in this file.
+    """
+    if held_duration < settings.PRIOR_OPPORTUNITY_GRACE:
+        return "no_prior_opportunity"
+    if random.random() < settings.TACKLE_BREAK_CHANCE:
+        return "broken"
+    return "holding_the_ball"
+
+
 # ── AFL Hero mode helpers (pure; used by hero_state) ────────────────
 # Hero outcomes resolve interactively (interception mid-flight, marks at
 # landing) rather than via the top-down _pending_outcome pattern, because
@@ -213,14 +241,59 @@ def resolve_contest(target_point, nearby_players):
 
 def clamp_to_oval(x, y):
     """Pull a point back inside the playing oval if it has strayed out."""
-    rx = settings.FIELD_W / 2 - 2
-    ry = settings.FIELD_H / 2 - 2
+    rx = settings.FIELD_W / 2 - settings.OOB_BOUNDARY_INSET
+    ry = settings.FIELD_H / 2 - settings.OOB_BOUNDARY_INSET
     ex = (x - settings.FIELD_CX) / rx
     ey = (y - settings.FIELD_CY) / ry
     d = math.sqrt(ex * ex + ey * ey)
     if d <= 1.0:
         return (x, y)
     return (settings.FIELD_CX + ex / d * rx, settings.FIELD_CY + ey / d * ry)
+
+
+def is_out_of_bounds(x, y):
+    """True once (x, y) has crossed the same oval boundary clamp_to_oval
+    clamps back inside — the one shared "is this point on the field"
+    test for both out-on-the-full detection (Ball still in flight) and
+    the ball-up case (a missed kick's landing point sits outside).
+    """
+    rx = settings.FIELD_W / 2 - settings.OOB_BOUNDARY_INSET
+    ry = settings.FIELD_H / 2 - settings.OOB_BOUNDARY_INSET
+    ex = (x - settings.FIELD_CX) / rx
+    ey = (y - settings.FIELD_CY) / ry
+    return ex * ex + ey * ey > 1.0
+
+
+def boundary_crossing_point(from_point, to_point):
+    """Where the straight segment from_point -> to_point first crosses
+    the oval boundary, or to_point itself if it never does.
+
+    Used for "out on the full": once a frame's Ball.advance_flight step
+    has landed outside the oval, this walks back along that single
+    frame's short travel segment to find the actual crossing point —
+    close enough over one frame's distance that a binary search would be
+    overkill (BALL_FLIGHT_SPEED's fastest single-frame step is a small
+    fraction of the oval's radius), so a fixed number of bisection steps
+    is plenty accurate for where the free kick gets taken from.
+    """
+    if not is_out_of_bounds(*from_point):
+        lo, hi = 0.0, 1.0   # from_point is in bounds, to_point is not
+    else:
+        return from_point   # already out at the start of this segment —
+                             # nothing to bisect, take the earlier point
+    fx, fy = from_point
+    tx, ty = to_point
+    for _ in range(12):     # 2**-12 precision along the segment — plenty
+        mid = (lo + hi) / 2
+        mx = fx + (tx - fx) * mid
+        my = fy + (ty - fy) * mid
+        if is_out_of_bounds(mx, my):
+            hi = mid
+        else:
+            lo = mid
+    mx = fx + (tx - fx) * hi
+    my = fy + (ty - fy) * hi
+    return (mx, my)
 
 
 def bezier_point(p0, ctrl, p1, t):

@@ -54,6 +54,12 @@ python main.py
 
 Outcomes resolve probabilistically rather than by direct collision: pressure from nearby opponents erodes handball and kick accuracy, contested marks are won by a proximity-weighted roll, and shots on goal split into goals, behinds, or misses based on distance and angle off the posts. All of it lives in `mechanics.py` as small, pure, testable functions.
 
+A handful of match rules sit on top of that resolution layer:
+
+- **Mark / stand the mark** — a clean mark taken from beyond 15m freezes the nearest defender in place and shields the marker from a tackle for 5 seconds.
+- **Holding the ball** — get tackled and the ball is judged on how long you've held it: within the first half-second it's a neutral ball-up (nobody's fault yet), past that it's an almost-random chance to break the tackle and keep it or be pinged for holding the ball (free kick to the tackler).
+- **Out of bounds** — a kick that crosses the boundary in the air without landing first is out on the full (free kick to the other side); a kick that comes down and rolls or bounces out is a neutral ball-up instead.
+
 ## Project layout
 
 - `settings.py` — every tunable constant: colors, field geometry, speeds, camera rig

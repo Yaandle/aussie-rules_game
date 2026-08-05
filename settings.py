@@ -170,15 +170,71 @@ MARK_STAND_MIN_DISTANCE = 15.0  # a kick landing as a mark past this distance
 MARK_HOLD_DURATION = 5.0        # seconds the marker is tackle-immune and the
                                   # nearest defender is frozen at the mark
 
-# Tackle/50-50 reaction minigame tuning — one place to balance, see
+# Loose-ball/50-50 reaction minigame tuning — one place to balance, see
 # contest_minigame.py. Miss policy is deliberately configurable rather
-# than hardcoded (see contest_minigame._miss).
+# than hardcoded (see contest_minigame._miss). Tackles no longer use this
+# minigame (see TACKLE_* below / mechanics.resolve_tackle) — this block
+# now only drives a loose ball landing in a pack (kind="loose_ball", see
+# GameState._apply_pending_outcome's "contest" branch) and a ruck contest
+# at a boundary ball-up (see possession.start_ruck_contest), both of
+# which still resolve via this same reaction race.
 CONTEST_PROMPT_COUNT = 3
 CONTEST_AI_REACTION_RANGE = (0.35, 0.55)  # seconds per prompt, placeholder
                                             # HOOK: future attribute-driven AI reaction speed
 CONTEST_INPUT_WINDOW = 1.4        # seconds allowed per prompt before it times out
 CONTEST_MISS_POLICY = "reset_combo"   # "reset_combo" | "time_penalty" | "instant_loss"
 CONTEST_MISS_TIME_PENALTY = 0.4
+
+# ── Tackle resolution: holding the ball / prior opportunity ──────────
+# A tackle (possession.find_tackle_trigger) no longer opens the reaction
+# minigame — it resolves instantly (see mechanics.resolve_tackle),
+# because the outcome now depends on match-rule state (how long the
+# carrier has held the ball) rather than a race either player can be
+# equally good at regardless of the football situation.
+#
+# GameState.possession_held_timer counts seconds since the current
+# carrier gained the ball (reset in _give_possession, incremented once
+# per frame in update()). A tackle before PRIOR_OPPORTUNITY_GRACE has
+# elapsed is "no prior opportunity" — the carrier hasn't had a real
+# chance to dispose yet, so it's a neutral ball-up, no penalty either
+# way. A tackle after that window is judged as holding the ball: an
+# almost-random break-tackle roll (TACKLE_BREAK_CHANCE) decides whether
+# the carrier shrugs the tackle off (keeps the ball) or is pinged for
+# holding it (free kick to the tackler).
+#
+# HOOK: TACKLE_BREAK_CHANCE is a flat placeholder — a future
+# strength/agility/tackling attribute system replaces the single
+# probability with something derived per-player, the same way every
+# other placeholder in this file (AI_HOLD_TIMEOUT, CONTEST_AI_REACTION_
+# RANGE) already flags where attributes eventually plug in.
+PRIOR_OPPORTUNITY_GRACE = 0.5   # seconds after gaining the ball a tackle is
+                                  # always a neutral ball-up, never holding-the-ball
+TACKLE_BREAK_CHANCE = 0.45      # odds the carrier breaks a past-grace tackle
+                                  # and keeps the ball instead of holding it
+POST_TACKLE_COOLDOWN = 1.0      # seconds after ANY tackle resolution (broken or
+                                  # not) before that pairing can trigger another —
+                                  # reuses the same separation idea as
+                                  # CONTEST_COOLDOWN/_separate_after_contest so a
+                                  # broken tackle doesn't instantly re-trigger
+
+# ── Out of bounds ──────────────────────────────────────────────────────
+# Two distinct AFL rulings, both detected on the ball rather than on any
+# player (players are already clamped inside the oval — see Player.move —
+# so only the ball, in flight or resting after a missed kick, can
+# actually leave it):
+#   "out on the full"  — a kicked ball crosses the boundary line in the
+#                         air, before landing/being marked/contested.
+#                         Free kick to whichever team didn't kick it,
+#                         taken from where it crossed the line.
+#   "ball-up" (ruck)    — the ball comes down outside the oval (a grounded
+#                         miss that rolls/bounces out) rather than crossing
+#                         it on the full. Neutral: a boundary throw-in,
+#                         resolved as a loose_ball contest between the
+#                         nearest player of each team at that spot.
+OOB_BOUNDARY_INSET = 2.0   # matches the inset mechanics.clamp_to_oval/Player.move
+                             # already use for "inside the oval" — kept as one
+                             # named constant here so the OOB check reads the
+                             # exact same boundary every other clamp already does
 
 # ── AFL Hero mode: camera (field-level diorama view) ────────────────
 HERO_CAM_BACK   = 46.0   # camera ground distance behind the focus point

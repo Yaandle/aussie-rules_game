@@ -11,7 +11,11 @@ State machine:
                       which have always been team-agnostic under the hood).
   IN_CONTEST       — a contest_minigame.Contest is in progress
                       (GameState.active_contest); normal play is frozen
-                      (see GameState.update).
+                      (see GameState.update). Only loose_ball (a kick
+                      landing in a pack) and ruck (a boundary ball-up)
+                      contests reach this state — a tackle resolves
+                      instantly instead (see find_tackle_trigger /
+                      GameState._resolve_tackle_now) and never sets it.
   DEAD_BALL_KICKOUT — set for one frame after a behind, while the
                       defending team's kicker is being placed in their
                       goal square; promoted straight back to HELD_PLAYER
@@ -34,12 +38,15 @@ def attacking_goal(team):
 
 
 def find_tackle_trigger(game_state):
-    """The [carrier, defender] pair to start a tackle contest between,
-    or None. The nearest opposing player closing to within
-    TACKLE_TRIGGER_RADIUS of the carrier triggers it — this is the same
-    "nearest defender closes in" behaviour update_defenders already
-    drives (see mechanics.py), just no longer stopping short of the
-    carrier without consequence.
+    """The [carrier, defender] pair to resolve a tackle between, or None.
+    The nearest opposing player closing to within TACKLE_TRIGGER_RADIUS
+    of the carrier triggers it — this is the same "nearest defender
+    closes in" behaviour update_defenders already drives (see
+    mechanics.py), just no longer stopping short of the carrier without
+    consequence. The tackle itself resolves instantly (see
+    GameState._resolve_tackle_now / mechanics.resolve_tackle) — this
+    function only answers "has a tackle happened this frame," not how it
+    plays out.
 
     HOOK: future positioning/timing/attributes would narrow or widen
     the trigger radius per-defender instead of one flat constant, and

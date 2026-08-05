@@ -219,6 +219,19 @@ class GameState:
         self.ai_hold_timer = 0.0
         self.contest_cooldown = 0.0
         self._contest_direction_queue = []
+        # Seconds the current carrier has held the ball — reset in
+        # _give_possession, incremented once per frame in update().
+        # Feeds "prior opportunity" (see mechanics.resolve_tackle /
+        # settings.PRIOR_OPPORTUNITY_GRACE): a tackle before the grace
+        # window elapses is always a neutral ball-up, never holding-the-
+        # ball, regardless of the break-tackle roll.
+        self.possession_held_timer = 0.0
+        # Cooldown after ANY tackle resolution (broken or holding-the-
+        # ball) before that exact pairing can trigger another — see
+        # _resolve_tackle_now / settings.POST_TACKLE_COOLDOWN. Separate
+        # from contest_cooldown (loose-ball/ruck contests still use that
+        # one) since tackles no longer go through contest_minigame at all.
+        self.tackle_cooldown = 0.0
         # A >MARK_STAND_MIN_DISTANCE mark freezes the nearest opponent in
         # place and protects the marker from a tackle trigger for
         # MARK_HOLD_DURATION seconds — see _start_standing_mark, decremented
@@ -233,6 +246,14 @@ class GameState:
         # spell can't survive into the new one.
         self.controlled_player = None
         self._was_carrying = False
+        # Out-of-bounds tracking for the ball currently in flight — see
+        # _attempt_kick/_attempt_handball (set on launch) and update()'s
+        # OOB check (consulted every frame while airborne). A handball
+        # never draws this check (see settings.py's Out of bounds note —
+        # only a kicked ball's flight can be ruled out on the full); a
+        # scoring attempt is also exempt (its own goal/behind/miss
+        # resolution already owns the boundary near the goal line).
+        self._kick_in_flight_team = None
         # Both classic modes share AFL Hero's diorama presentation, but use
         # their own camera tuning (settings.MAIN_CAM_*) for a slightly more
         # vertical, more fixed "broadcast" feel that differs from Hero mode.
@@ -651,6 +672,7 @@ class GameState:
 
         carrier.is_ball_carrier = False
         self.ball.start_flight(carrier.pos, target.pos)
+        self._kick_in_flight_team = None   # a handball never draws the OOB check
         if outcome["success"]:
             self._pending_outcome = {"type": "possession", "player": target}
         else:
@@ -680,8 +702,16 @@ class GameState:
         pressure = mechanics.calculate_pressure(carrier, opposing_team)
         goal = possession.attacking_goal(carrier.team)
 
-        if (self.mode_config.get("scoring_enabled", True)
-                and mechanics.is_scoring_attempt(carrier.pos, target_point, goal)):
+        is_scoring_attempt = (self.mode_config.get("scoring_enabled", True)
+                              and mechanics.is_scoring_attempt(carrier.pos, target_point, goal))
+        # Out-of-bounds only ever applies to a genuine field kick — a shot
+        # on goal necessarily aims at/near the boundary line by design
+        # (GOAL_RIGHT/GOAL_LEFT sit exactly on the oval's edge — see
+        # settings.py) and already has its own goal/behind/miss
+        # resolution, so it's exempt (see update()'s OOB check).
+        self._kick_in_flight_team = None if is_scoring_attempt else carrier.team
+
+        if is_scoring_attempt:
             result = mechanics.resolve_scoring_attempt(carrier.pos, target_point, goal)
             self._pending_outcome = {"type": "score", "result": result, "team": carrier.team}
         else:
@@ -841,28 +871,63 @@ class GameState:
         mechanics.separate_players(self.players, settings.PLAYER_MIN_SEPARATION)
 
         self.contest_cooldown = max(0.0, self.contest_cooldown - dt)
+        self.tackle_cooldown = max(0.0, self.tackle_cooldown - dt)
+        if self.possession_state == possession.HELD_PLAYER:
+            self.possession_held_timer += dt
         if self.standing_mark is not None:
             self.standing_mark["timer"] -= dt
             if self.standing_mark["timer"] <= 0.0:
                 self.standing_mark = None
 
-        # A defender closing to tackle range starts a live contest
-        # instead of holding at arm's length forever (see
-        # possession.find_tackle_trigger / TACKLE_TRIGGER_RADIUS).
-        # Gated on contest_cooldown so a just-resolved contest's still-
-        # adjacent participants (see _separate_after_contest) don't
-        # immediately restart another one back to back.
+        # A defender closing to tackle range resolves a tackle instantly
+        # (see mechanics.resolve_tackle / possession.find_tackle_trigger /
+        # TACKLE_TRIGGER_RADIUS) rather than opening the reaction minigame —
+        # holding-the-ball is a match-rule judgment (how long the carrier's
+        # held it), not a race. Gated on tackle_cooldown so a just-resolved
+        # tackle's still-adjacent pairing (see _separate_after_contest)
+        # doesn't immediately re-trigger back to back.
         if (self.possession_state == possession.HELD_PLAYER
                 and self.mode_config.get("contests_enabled", True)
-                and self.contest_cooldown <= 0.0):
+                and self.tackle_cooldown <= 0.0):
             participants = possession.find_tackle_trigger(self)
             if participants is not None:
-                self._start_contest(participants, "tackle")
+                self._resolve_tackle_now(participants)
                 return
 
         self.ball.follow_carrier()
-        if self.ball.advance_flight(dt):
-            self._apply_pending_outcome()
+        was_in_flight = self.ball.in_flight
+        pre_step_pos = self.ball.pos
+        arrived = self.ball.advance_flight(dt)
+        # Out on the full: a kicked ball (never a handball, never a
+        # scoring attempt — see _attempt_kick/_attempt_handball, which
+        # only set _kick_in_flight_team for a genuine field kick) that
+        # crosses the oval boundary before landing is a free kick to
+        # whichever team didn't kick it, taken from the crossing point —
+        # checked every frame it's airborne, not just on arrival, so a
+        # kick that sails through the boundary well short of its aimed
+        # target is still caught the moment it actually crosses, per the
+        # real rule (out on the full is about crossing the line in the
+        # air, not about where the kick was originally aimed).
+        if (was_in_flight and self._kick_in_flight_team is not None
+                and mechanics.is_out_of_bounds(self.ball.x, self.ball.y)):
+            self._resolve_out_on_the_full(pre_step_pos, self.ball.pos)
+        elif arrived:
+            if (self._kick_in_flight_team is not None
+                    and self._pending_outcome is not None
+                    and self._pending_outcome.get("type") != "score"
+                    and mechanics.is_out_of_bounds(*self.ball.pos)):
+                # Landed outside the oval without ever crossing the line
+                # mid-flight to trip the check above (a grounded kick
+                # landing right on/past the edge, e.g. a missed shot that
+                # drifts past the behind post and out) — neutral ball-up,
+                # not a free kick, since the ball came down rather than
+                # sailing over the line.
+                self._pending_outcome = None
+                self._show_message("BALL UP")
+                self._start_ruck_contest(self.ball.pos)
+            else:
+                self._apply_pending_outcome()
+            self._kick_in_flight_team = None
 
         carrier = self.carrier
         if carrier is not None:
@@ -1183,6 +1248,7 @@ class GameState:
         self.ball.give_to(player)
         self.possession_state = possession.HELD_PLAYER
         self.run_since_bounce = 0.0
+        self.possession_held_timer = 0.0
 
     def _start_standing_mark(self, marker):
         """A mark taken from beyond MARK_STAND_MIN_DISTANCE freezes the
@@ -1202,34 +1268,120 @@ class GameState:
             "timer": settings.MARK_HOLD_DURATION,
         }
 
-    def _start_contest(self, participants, kind):
-        """Freeze play and begin a tackle/50-50 reaction contest between
-        exactly two players (see contest_minigame.py).
+    def _resolve_out_on_the_full(self, pre_step_pos, out_pos):
+        """A kicked ball just crossed the oval boundary mid-flight without
+        landing/being marked/contested first — free kick to whichever
+        team didn't kick it (see _kick_in_flight_team, set only for a
+        genuine field kick in _attempt_kick), taken from where it
+        crossed (mechanics.boundary_crossing_point bisects this frame's
+        travel segment for that point).
 
-        Also drops any in-progress kick-aim: a tackle can interrupt the
-        human mid-aim (the trigger check only looks at possession_state,
-        not self.mode), and whoever's carrying can change once the
-        contest resolves — a stale MODE_AIMING_KICK left pointing at the
-        old aim target/carrier must not survive into that.
+        Ends the ball's flight outright (whatever _pending_outcome was
+        queued for its original landing spot is discarded — the kick
+        never actually arrives now) and hands it to the nearest opponent
+        of the kicking team at the crossing spot, same "nearest player
+        takes the free kick" idea as resolve_behind's kickout.
+        """
+        kicking_team = self._kick_in_flight_team
+        self._kick_in_flight_team = None
+        self._pending_outcome = None
+        crossing = mechanics.boundary_crossing_point(pre_step_pos, out_pos)
+        receiving_team = self.opponents if kicking_team == settings.YELLOW else self.teammates
+        if not receiving_team:
+            return
+        taker = min(receiving_team, key=lambda p: p.distance_to(crossing))
+        taker.x, taker.y = mechanics.clamp_to_oval(*crossing)
+        self._give_possession(taker)
+        self._show_message("OUT ON THE FULL - FREE KICK")
+
+    def _resolve_tackle_now(self, participants):
+        """Resolve a tackle trigger instantly (see mechanics.resolve_tackle) —
+        no reaction minigame, no possession_state detour through
+        IN_CONTEST: the whole thing resolves and separates within this
+        one call, same frame.
+
+        `participants` is [carrier, defender] (see
+        possession.find_tackle_trigger). Any in-progress kick-aim drops
+        the same way a contest used to force it to: a tackle can land
+        mid-aim, and who's carrying can change as a result, so a stale
+        MODE_AIMING_KICK pointing at the old carrier/target must not
+        survive into that.
+        """
+        carrier, defender = participants[0], participants[1]
+        self.mode = MODE_IDLE
+        result = mechanics.resolve_tackle(self.possession_held_timer)
+        if result == "no_prior_opportunity":
+            self._show_message("BALL UP")
+            self._start_ruck_contest(carrier.pos)
+        elif result == "broken":
+            self._show_message("TACKLE BROKEN")
+            # Carrier keeps the ball outright — no _give_possession call
+            # (that would also reset possession_held_timer, which should
+            # keep counting: they're still the same carry, just shrugged
+            # off a tackle partway through it).
+        else:  # "holding_the_ball" — free kick to the tackler
+            self._show_message("HOLDING THE BALL - FREE KICK")
+            self._give_possession(defender)
+        self._separate_after_contest(participants)
+        self.tackle_cooldown = settings.POST_TACKLE_COOLDOWN
+
+    def _start_contest(self, participants, kind):
+        """Freeze play and begin a loose-ball/50-50/ruck reaction contest
+        between exactly two players (see contest_minigame.py). Tackles no
+        longer route through here — see _resolve_tackle_now, which
+        resolves a tackle instantly instead.
+
+        Also drops any in-progress kick-aim: a contest can interrupt the
+        human mid-aim, and whoever's carrying can change once it
+        resolves — a stale MODE_AIMING_KICK left pointing at the old aim
+        target/carrier must not survive into that.
         """
         self.active_contest = contest_minigame.start(participants, kind)
         self.possession_state = possession.IN_CONTEST
         self._contest_direction_queue = []
         self.mode = MODE_IDLE
 
+    def _start_ruck_contest(self, spot):
+        """A neutral ball-up: the nearest player from each team to `spot`
+        contests it (see contest_minigame's "ruck" kind / field_render's
+        "BALL UP!" label). Used for both a tackle with no prior
+        opportunity (_resolve_tackle_now) and the ball rolling out of
+        bounds without going out on the full (_apply_pending_outcome's
+        ball-up branch — see mechanics.is_out_of_bounds).
+
+        Falls back to handing whichever team has a nearer player the
+        ball outright if the other team has nobody at all on field (not
+        possible with a full roster, but keeps this safe the way
+        _start_standing_mark already is for its own edge case).
+        """
+        nearest_yellow = min(self.teammates, key=lambda p: p.distance_to(spot),
+                             default=None)
+        nearest_red = min(self.opponents, key=lambda p: p.distance_to(spot),
+                          default=None)
+        if nearest_yellow is None:
+            self._give_possession(nearest_red)
+            return
+        if nearest_red is None:
+            self._give_possession(nearest_yellow)
+            return
+        self.ball.x, self.ball.y = spot
+        self._start_contest([nearest_yellow, nearest_red], "ruck")
+
     def _update_contest(self, dt):
         """Advance the live contest one frame; apply its result once
         resolved (winner keeps/gains possession outright — see the
-        design note in contest_minigame.py on tackle/50-50 outcomes).
+        design note in contest_minigame.py on loose_ball/ruck outcomes).
+        Tackles no longer reach this path at all — see
+        _resolve_tackle_now, which resolves and separates instantly in
+        one call instead of going through active_contest/IN_CONTEST.
 
-        A resolved TACKLE contest leaves the two participants standing
-        right next to each other, well inside TACKLE_TRIGGER_RADIUS —
-        without separating them, the very next frame's trigger check
-        (see update()) would see the same pair still in range and start
-        a brand new contest immediately, forever. _separate_after_contest
+        A resolved contest leaves its two participants standing right
+        next to each other — without separating them, the very next
+        frame's checks could see the same pair still in range and start
+        something new immediately, forever. _separate_after_contest
         pushes them apart and a short self.contest_cooldown holds off
         re-triggering, so the winner gets an actual window of play
-        before another tackle can start.
+        before another contest can start.
         """
         human_inputs, self._contest_direction_queue = self._contest_direction_queue, []
         contest_minigame.update(self.active_contest, dt, human_inputs)
