@@ -141,14 +141,26 @@ def _render_hud(display, gs):
     charcoal = pygame.Color(settings.UI_CHARCOAL)
     ink = pygame.Color(settings.INK)
 
-    # Score & clock chip, top left.
+    # Score & clock chip, top left. SCENARIOS carry their own match
+    # context (levels.py's home_score_start/away_score_start/quarter) so
+    # a mission reads as a specific broadcast situation rather than a
+    # generic puzzle — AWAY stays fixed (this engine has no opposing-
+    # scoring mechanic; see levels.py's "comeback" objective note) while
+    # HOME climbs from its starting score as you actually score.
+    if gs.game_mode == "scenario" and gs.scenario is not None:
+        home_disp = gs.scenario.get("home_score_start", 0) + gs.yellow_points
+        away_disp = gs.scenario.get("away_score_start", 0)
+        clock_label = gs.scenario.get("quarter", "TIME")
+    else:
+        home_disp = gs.yellow_points
+        away_disp = 0
+        clock_label = "Q1"
     score = hero_render._text(
-        "s", f"HOME {gs.yellow_points:02d}  AWAY 00", cream)
+        "s", f"HOME {home_disp:02d}  AWAY {away_disp:02d}", cream)
     m, s = divmod(int(gs.timer), 60)
     urgent = gs.game_mode == "scenario" and gs.timer < 10
-    label = "TIME" if gs.game_mode == "scenario" else "Q1"
     clock = hero_render._text(
-        "s", f"{label}  {m:01d}:{s:02d}",
+        "s", f"{clock_label}  {m:01d}:{s:02d}",
         pygame.Color(settings.ACCENT_RED) if urgent else muted)
     w = max(score.get_width(), clock.get_width()) + 28
     chip = pygame.Rect(24, 24, w, 52)
@@ -157,10 +169,13 @@ def _render_hud(display, gs):
     display.blit(score, (chip.x + 14, chip.y + 8))
     display.blit(clock, (chip.x + 14, chip.y + 28))
 
-    # Mission chip, top center (scenario mode only).
+    # Mission chip, top center (scenario mode only) — name, then the
+    # quarter folded into the tagline line so the context is visible for
+    # the whole scenario, not just the intro briefing message.
     if gs.game_mode == "scenario" and gs.scenario is not None:
         name = hero_render._text("s", gs.scenario["name"], cream)
-        tag = hero_render._text("s", gs.scenario["tagline"], muted)
+        tag_text = f"{gs.scenario.get('quarter', '')} · {gs.scenario['tagline']}".strip(" ·")
+        tag = hero_render._text("s", tag_text, muted)
         w = max(name.get_width(), tag.get_width()) + 28
         chip = pygame.Rect(0, 0, w, 52)
         chip.midtop = (settings.WINDOW_W // 2, 20)

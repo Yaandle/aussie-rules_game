@@ -214,6 +214,13 @@ class GameState:
         self.timer = self.scenario["time_limit"]
         self.score = {"goals": 0, "behinds": 0}
         self.phase = PHASE_PLAYING
+        # A one-off briefing so each scenario reads as a specific match
+        # situation rather than an abstract puzzle — reuses the same HUD
+        # message plate as every in-play event (see field_render's HUD),
+        # just held onscreen longer since it's a full sentence.
+        situation = self.scenario.get("situation")
+        if situation:
+            self._show_message(situation, duration=4.5)
 
     def start_hero(self, index):
         """Begin one AFL Hero level (swipe-based possession puzzle)."""
@@ -706,8 +713,16 @@ class GameState:
         # Scenario objectives resolve before any restart.
         if self.game_mode == "scenario":
             objective = self.scenario["objective"]
-            won = (result == "goal" if objective == "goal"
-                   else result in ("goal", "behind"))
+            if objective == "comeback":
+                # Not a one-score win — keep playing (fall through to the
+                # normal post-score reset below) until the deficit is
+                # actually overcome or the clock runs out (_time_expired
+                # already fails scenarios on timeout).
+                target = self.scenario.get("away_score_start", 0)
+                won = self.yellow_points >= target
+            else:
+                won = (result == "goal" if objective == "goal"
+                       else result in ("goal", "behind"))
             if won:
                 self.phase = PHASE_END
                 self.result = "win"
@@ -760,7 +775,9 @@ class GameState:
 
     # ── Small helpers ───────────────────────────────────────────────
 
-    def _show_message(self, text):
-        """Show a short HUD message."""
+    def _show_message(self, text, duration=2.0):
+        """Show a HUD message for `duration` seconds (default matches
+        every existing short event message; start_scenario passes a
+        longer one for its scenario-briefing sentence)."""
         self.message = text
-        self.message_timer = 2.0
+        self.message_timer = duration

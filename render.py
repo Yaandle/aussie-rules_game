@@ -525,7 +525,12 @@ def _render_main_menu(display, game_state):
                    for i, lv in enumerate(hero_levels.HERO_LEVELS)]
         entries.append(("BACK", False, None))
     else:
-        entries = [(s["name"], i >= game_state.unlocked, s["tagline"])
+        # Quarter folded into the tagline here too, so the picker itself
+        # hints at match context before you even start (see levels.py's
+        # quarter/situation fields and field_render's in-play HUD, which
+        # carries the same context through the whole scenario).
+        entries = [(s["name"], i >= game_state.unlocked,
+                   f"{s.get('quarter', '')} · {s['tagline']}".strip(" ·"))
                    for i, s in enumerate(levels.SCENARIOS)]
         entries.append(("BACK", False, None))
 
