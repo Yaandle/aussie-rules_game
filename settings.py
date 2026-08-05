@@ -25,7 +25,6 @@ TREE        = "#66794e"   # canopy
 TREE_DARK   = "#546741"   # canopy shading
 TREE_LIGHT  = "#788c5c"   # canopy lit speckle
 WOOD        = "#6b5a40"   # trunks
-WOOD_DARK   = "#544733"   # trunk shading
 FENCE       = "#454738"   # dark rail fences and benches
 POST_RED    = "#c65449"   # red band at the base of each post
 ACCENT_RED  = "#c65449"   # scoreboard dot, warnings, countdown

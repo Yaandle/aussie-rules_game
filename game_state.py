@@ -643,10 +643,20 @@ class GameState:
         # comments) the rest of both sides also ease toward their
         # kickoff formation shape, blended toward the ball, so a
         # 16-a-side roster doesn't stand frozen off the ball.
+        #
+        # `opponents` is fetched once and reused below (team membership
+        # never changes mid-match — see entities.Player — so re-deriving
+        # it a second time after the ball-flight/turnover handling further
+        # down would just repeat the same self.players scan for the same
+        # result). `carrier` still gets re-fetched after that section,
+        # since a completed ball flight can actually hand possession to a
+        # different player (_apply_pending_outcome) — that one isn't safe
+        # to cache.
         carrier = self.carrier
+        opponents = self.opponents
         if carrier is not None:
             home = self._home_positions if self.game_mode == "full" else None
-            mechanics.update_defenders(self.opponents, carrier.pos, dt, home)
+            mechanics.update_defenders(opponents, carrier.pos, dt, home)
             if home is not None:
                 resting = [t for t in self.teammates if not t.is_ball_carrier]
                 mechanics.update_off_ball(resting, home, carrier.pos, dt)
@@ -661,7 +671,7 @@ class GameState:
                 self._reset_after_turnover()
 
         carrier = self.carrier
-        self.pressure = (mechanics.calculate_pressure(carrier, self.opponents)
+        self.pressure = (mechanics.calculate_pressure(carrier, opponents)
                          if carrier else 0.0)
         if self.mode == MODE_AIMING_KICK:
             # The right stick (if pushed) nudges the cursor incrementally;

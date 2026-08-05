@@ -60,10 +60,11 @@ from pygame._sdl2 import controller as _sdl
 BTN_A = pygame.CONTROLLER_BUTTON_A
 BTN_B = pygame.CONTROLLER_BUTTON_B
 BTN_X = pygame.CONTROLLER_BUTTON_X
-BTN_Y = pygame.CONTROLLER_BUTTON_Y          # unbound — see _BUTTON_KEYS
+# Y and Back exist on the pad but nothing in this game binds them (Y's
+# old kick-aim job moved to LT — see _BUTTON_KEYS below); left out here
+# rather than defined-and-unused.
 BTN_LB = pygame.CONTROLLER_BUTTON_LEFTSHOULDER
 BTN_RB = pygame.CONTROLLER_BUTTON_RIGHTSHOULDER
-BTN_BACK = pygame.CONTROLLER_BUTTON_BACK
 BTN_START = pygame.CONTROLLER_BUTTON_START
 BTN_DPAD_UP = pygame.CONTROLLER_BUTTON_DPAD_UP
 BTN_DPAD_DOWN = pygame.CONTROLLER_BUTTON_DPAD_DOWN
@@ -193,6 +194,16 @@ def is_connected():
     state frame to frame, since _open/handle_device_event mutate
     _controllers directly."""
     return bool(_controllers)
+
+
+def key_label(keys, xbox):
+    """Formats a CONTROLS-overlay row's key column: plain `keys` normally,
+    or `keys · xbox` while a controller is connected. The one shared bit
+    of logic behind all three CONTROLS overlays' rows (render.py's
+    _render_menu, hero_render.py's/goalkick_render.py's
+    _render_controls), so each one doesn't redefine the same tiny
+    closure over its own locally-cached is_connected() check."""
+    return f"{keys} · {xbox}" if is_connected() else keys
 
 
 def _stick_axis(c, axis, deadzone):
