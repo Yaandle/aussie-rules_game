@@ -651,7 +651,6 @@ class GameState:
             self._aim_cursor[0] + (target[0] - self._aim_cursor[0]) * k))
         self._aim_cursor[1] = max(0, min(settings.WINDOW_H,
             self._aim_cursor[1] + (target[1] - self._aim_cursor[1]) * k))
-        self._aim_cursor[1] += (target[1] - self._aim_cursor[1]) * k
 
     # ── Actions ─────────────────────────────────────────────────────
 
@@ -768,7 +767,17 @@ class GameState:
     # ── Update loop ─────────────────────────────────────────────────
 
     def update(self, dt):
-        """Advance timers, movement, AI, ball flight, and pending resolutions."""
+        """Advance timers, movement, AI, ball flight, and pending resolutions.
+
+        A straight-line sequence of named steps — each one a self-
+        contained concern (movement, defensive shape, tackle trigger,
+        ball flight/outcomes, aim/camera, transient timers) pulled into
+        its own method below so this top-level function reads as a frame
+        outline rather than one long block. None of that extraction
+        changes ordering or behavior: every step still runs in exactly
+        the sequence it always has, and the two frame-ending early
+        returns (a resolved tackle; time expiring) are unchanged.
+        """
         if self.phase == PHASE_HERO:
             self._update_hero(dt)
             return
@@ -821,48 +830,7 @@ class GameState:
         self._update_movement(dt)
         ai_control.decide_next_action(self, dt)
 
-        # Closing defenders converge while someone holds the ball. In
-        # FULL GAME (not scenarios — see FORMATION_LINES/_load_layout
-        # comments) the rest of both sides also ease toward their
-        # kickoff formation shape, blended toward the ball, so a
-        # 16-a-side roster doesn't stand frozen off the ball.
-        #
-        # `carrier` gets re-fetched after the ball-flight/turnover
-        # handling further down, since a completed ball flight can hand
-        # possession to a different player (_apply_pending_outcome) —
-        # that one isn't safe to cache across this block.
-        carrier = self.carrier
-        if carrier is not None:
-            home = self._home_positions if self.game_mode == "full" else None
-            # Whichever team ISN'T carrying closes in (this used to always
-            # be RED chasing YELLOW — now that RED can carry too, the
-            # chasing/resting sides swap with carrier.team so a human
-            # defender actually converges on an AI carrier the same way
-            # RED converges on the human, instead of RED harmlessly
-            # "chasing" its own teammate).
-            defending_team = self.opponents if carrier.team == settings.YELLOW else self.teammates
-            carrying_teammates = self.teammates if carrier.team == settings.YELLOW else self.opponents
-            # A defender currently standing the mark (see standing_mark /
-            # _start_standing_mark) is frozen — excluded from the chase
-            # entirely for the duration, same as a resting off-ball
-            # teammate is excluded below. The human's controlled_player is
-            # also excluded here whenever it's a defending-side player
-            # (i.e. YELLOW is NOT carrying) — update_defenders drives both
-            # the active chase step AND (via its own internal
-            # update_off_ball call, see mechanics.py) the off-ball drift
-            # for non-chasing defenders, so it must never touch whichever
-            # defender the human is currently steering, or input and
-            # auto-drift would fight over the same player every frame.
-            standing_defender = self.standing_mark["defender"] if self.standing_mark else None
-            excluded_defender = (self.controlled_player
-                                 if self.controlled_player in defending_team else None)
-            chasing = [d for d in defending_team
-                      if d is not standing_defender and d is not excluded_defender]
-            mechanics.update_defenders(chasing, carrier.pos, dt, home)
-            if home is not None:
-                resting = [t for t in carrying_teammates
-                          if not t.is_ball_carrier and t is not self.controlled_player]
-                mechanics.update_off_ball(resting, home, carrier.pos, dt)
+        self._update_defenders_and_shape(dt)
 
         # Push apart any two players left standing closer than
         # PLAYER_MIN_SEPARATION after this frame's movement — nothing
@@ -876,6 +844,66 @@ class GameState:
         # below) — this only stops full visual overlap, not proximity.
         mechanics.separate_players(self.players, settings.PLAYER_MIN_SEPARATION)
 
+        self._decay_contest_timers(dt)
+
+        # A defender closing to tackle range resolves a tackle instantly
+        # (see _check_tackle_trigger / mechanics.resolve_tackle) —
+        # ends this frame's update immediately, same as before, since a
+        # resolved tackle can change who's carrying and everything below
+        # (ball flight, pressure, aim) only means anything for whoever
+        # this frame's actual carrier turns out to be.
+        if self._check_tackle_trigger():
+            return
+
+        self._advance_ball(dt)
+        self._update_pressure_aim_and_camera(raw_dt)
+        self._decay_transient_timers(dt)
+
+    def _update_defenders_and_shape(self, dt):
+        """Closing defenders converge while someone holds the ball. In
+        FULL GAME (not scenarios — see FORMATION_LINES/_load_layout
+        comments) the rest of both sides also ease toward their kickoff
+        formation shape, blended toward the ball, so a 16-a-side roster
+        doesn't stand frozen off the ball. No-ops with nobody carrying
+        (shouldn't happen in practice, but keeps this safe).
+        """
+        carrier = self.carrier
+        if carrier is None:
+            return
+        home = self._home_positions if self.game_mode == "full" else None
+        # Whichever team ISN'T carrying closes in (this used to always
+        # be RED chasing YELLOW — now that RED can carry too, the
+        # chasing/resting sides swap with carrier.team so a human
+        # defender actually converges on an AI carrier the same way
+        # RED converges on the human, instead of RED harmlessly
+        # "chasing" its own teammate).
+        defending_team = self.opponents if carrier.team == settings.YELLOW else self.teammates
+        carrying_teammates = self.teammates if carrier.team == settings.YELLOW else self.opponents
+        # A defender currently standing the mark (see standing_mark /
+        # _start_standing_mark) is frozen — excluded from the chase
+        # entirely for the duration, same as a resting off-ball
+        # teammate is excluded below. The human's controlled_player is
+        # also excluded here whenever it's a defending-side player
+        # (i.e. YELLOW is NOT carrying) — update_defenders drives both
+        # the active chase step AND (via its own internal
+        # update_off_ball call, see mechanics.py) the off-ball drift
+        # for non-chasing defenders, so it must never touch whichever
+        # defender the human is currently steering, or input and
+        # auto-drift would fight over the same player every frame.
+        standing_defender = self.standing_mark["defender"] if self.standing_mark else None
+        excluded_defender = (self.controlled_player
+                             if self.controlled_player in defending_team else None)
+        chasing = [d for d in defending_team
+                  if d is not standing_defender and d is not excluded_defender]
+        mechanics.update_defenders(chasing, carrier.pos, dt, home)
+        if home is not None:
+            resting = [t for t in carrying_teammates
+                      if not t.is_ball_carrier and t is not self.controlled_player]
+            mechanics.update_off_ball(resting, home, carrier.pos, dt)
+
+    def _decay_contest_timers(self, dt):
+        """Tick down cooldowns/timers gated on this frame's dt (already
+        slow-mo'd while aiming a kick, same as every other timer here)."""
         self.contest_cooldown = max(0.0, self.contest_cooldown - dt)
         self.tackle_cooldown = max(0.0, self.tackle_cooldown - dt)
         if self.possession_state == possession.HELD_PLAYER:
@@ -885,21 +913,32 @@ class GameState:
             if self.standing_mark["timer"] <= 0.0:
                 self.standing_mark = None
 
-        # A defender closing to tackle range resolves a tackle instantly
-        # (see mechanics.resolve_tackle / possession.find_tackle_trigger /
-        # TACKLE_TRIGGER_RADIUS) rather than opening the reaction minigame —
-        # holding-the-ball is a match-rule judgment (how long the carrier's
-        # held it), not a race. Gated on tackle_cooldown so a just-resolved
-        # tackle's still-adjacent pairing (see _separate_after_contest)
-        # doesn't immediately re-trigger back to back.
-        if (self.possession_state == possession.HELD_PLAYER
+    def _check_tackle_trigger(self):
+        """Resolve an instant tackle if one triggered this frame (see
+        mechanics.resolve_tackle / possession.find_tackle_trigger /
+        TACKLE_TRIGGER_RADIUS) rather than opening the reaction minigame —
+        holding-the-ball is a match-rule judgment (how long the carrier's
+        held it), not a race. Gated on tackle_cooldown so a just-resolved
+        tackle's still-adjacent pairing (see _separate_after_contest)
+        doesn't immediately re-trigger back to back.
+
+        Returns True when a tackle resolved this frame — update() ends
+        the frame immediately in that case.
+        """
+        if not (self.possession_state == possession.HELD_PLAYER
                 and self.mode_config.get("contests_enabled", True)
                 and self.tackle_cooldown <= 0.0):
-            participants = possession.find_tackle_trigger(self)
-            if participants is not None:
-                self._resolve_tackle_now(participants)
-                return
+            return False
+        participants = possession.find_tackle_trigger(self)
+        if participants is None:
+            return False
+        self._resolve_tackle_now(participants)
+        return True
 
+    def _advance_ball(self, dt):
+        """Step the ball's flight/bounce for one frame and apply
+        whatever outcome that step resolves: out on the full, arrival
+        (mark/turnover/contest/score), or a grounded ball-up."""
         self.ball.follow_carrier()
         self.ball.advance_bounce(dt)
         was_in_flight = self.ball.in_flight
@@ -936,6 +975,12 @@ class GameState:
                 self._apply_pending_outcome()
             self._kick_in_flight_team = None
 
+    def _update_pressure_aim_and_camera(self, raw_dt):
+        """Recompute pressure on this frame's (possibly just-changed by
+        _advance_ball) carrier, drive the kick-aim cursor while aiming,
+        and update the camera focus — grouped together since the
+        camera's focus point depends on this same fresh carrier fetch.
+        """
         carrier = self.carrier
         if carrier is not None:
             opposing = self.opponents if carrier.team == settings.YELLOW else self.teammates
@@ -985,7 +1030,8 @@ class GameState:
                  else (carrier.pos if carrier else self.ball.pos))
         self.camera.update(raw_dt, focus, self.mode == MODE_AIMING_KICK)
 
-        # Decay transient visual timers (real time, not slowed).
+    def _decay_transient_timers(self, dt):
+        """Decay transient visual timers (real time, not slowed)."""
         if self.flash is not None:
             self.flash["timer"] -= dt
             if self.flash["timer"] <= 0.0:
@@ -1418,19 +1464,14 @@ class GameState:
     def _separate_after_contest(self, participants):
         """Push a resolved contest's two participants apart to just
         beyond TACKLE_TRIGGER_RADIUS (see _update_contest) instead of
-        leaving them standing on top of each other."""
+        leaving them standing on top of each other. Shares its actual
+        push math with mechanics.separate_players via mechanics.push_apart
+        (see that function's docstring)."""
         if len(participants) < 2:
             return
         a, b = participants[0], participants[1]
-        dx, dy = b.x - a.x, b.y - a.y
-        dist = math.hypot(dx, dy)
-        if dist < 0.01:
-            dx, dy, dist = 1.0, 0.0, 1.0
-        target_gap = settings.TACKLE_TRIGGER_RADIUS * 1.6
-        push = max(0.0, target_gap - dist) / 2
-        ux, uy = dx / dist, dy / dist
-        a.x, a.y = mechanics.clamp_to_oval(a.x - ux * push, a.y - uy * push)
-        b.x, b.y = mechanics.clamp_to_oval(b.x + ux * push, b.y + uy * push)
+        target_gap = settings.TACKLE_TRIGGER_RADIUS * settings.POST_CONTEST_SEPARATION_MULT
+        mechanics.push_apart(a, b, target_gap)
 
     def _reset_to_kickoff(self):
         """Return everyone to the current mode's opening layout after a score."""

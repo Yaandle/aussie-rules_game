@@ -80,6 +80,31 @@ def update_off_ball(players, home_positions, focus_pos, dt):
         _step_toward(p, (tx, ty), settings.OFF_BALL_SPEED, dt, stop_at=1.0)
 
 
+def push_apart(a, b, target_gap):
+    """Push two players directly apart along their connecting vector so
+    they end up at least `target_gap` apart, both clamped back inside
+    the oval. No-ops if they're already at/beyond that gap.
+
+    The shared low-level step behind two call sites that both want
+    "these two shouldn't be standing on top of each other" but for
+    different reasons: separate_players below (every close pair on the
+    roster, every frame, gap = PLAYER_MIN_SEPARATION) and
+    GameState._separate_after_contest (exactly the two players who just
+    finished a tackle/contest, gap = a multiple of TACKLE_TRIGGER_RADIUS
+    so the resolved pair doesn't immediately re-trigger).
+    """
+    dx, dy = b.x - a.x, b.y - a.y
+    dist = math.hypot(dx, dy)
+    if dist >= target_gap:
+        return
+    if dist < 0.01:
+        dx, dy, dist = 1.0, 0.0, 1.0
+    push = (target_gap - dist) / 2
+    ux, uy = dx / dist, dy / dist
+    a.x, a.y = clamp_to_oval(a.x - ux * push, a.y - uy * push)
+    b.x, b.y = clamp_to_oval(b.x + ux * push, b.y + uy * push)
+
+
 def separate_players(players, min_dist):
     """Push any two players standing closer than `min_dist` apart to
     exactly that distance, both clamped back inside the oval.
@@ -102,16 +127,7 @@ def separate_players(players, min_dist):
     """
     for i, a in enumerate(players):
         for b in players[i + 1:]:
-            dx, dy = b.x - a.x, b.y - a.y
-            dist = math.hypot(dx, dy)
-            if dist >= min_dist:
-                continue
-            if dist < 0.01:
-                dx, dy, dist = 1.0, 0.0, 1.0
-            push = (min_dist - dist) / 2
-            ux, uy = dx / dist, dy / dist
-            a.x, a.y = clamp_to_oval(a.x - ux * push, a.y - uy * push)
-            b.x, b.y = clamp_to_oval(b.x + ux * push, b.y + uy * push)
+            push_apart(a, b, min_dist)
 
 
 def calculate_pressure(ball_carrier, opponents):

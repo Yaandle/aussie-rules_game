@@ -199,6 +199,10 @@ CONTEST_COOLDOWN = 1.2       # seconds after a contest resolves before another c
                               # for the same pairing (see GameState._separate_after_contest —
                               # without this, a resolved tackle's still-adjacent participants
                               # would restart another contest on the very next eligible frame)
+POST_CONTEST_SEPARATION_MULT = 1.6  # GameState._separate_after_contest pushes a resolved
+                              # contest's two participants apart to this many multiples of
+                              # TACKLE_TRIGGER_RADIUS (see mechanics.push_apart), so the
+                              # winner gets a clean beat before anything can trigger again
 
 # ── Mark / stand-the-mark (see GameState.standing_mark, possession.py) ──
 MARK_STAND_MIN_DISTANCE = 15.0  # a kick landing as a mark past this distance
