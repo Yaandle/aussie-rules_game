@@ -49,7 +49,7 @@ class CharacterState:
     def __init__(self):
         self.selected = 0
         self.speed = settings.FULL_GAME_PLAYER_SPEED
-        self.height = 1.0   # preview-sprite scale multiplier; see docstring
+        self.height = settings.CHARACTER_HEIGHT_BASELINE_CM   # real cm; see docstring
 
         self.transition_dir = "in"    # "in" reveals, "out" covers before exit
         self.transition_t = 0.0

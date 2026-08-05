@@ -542,7 +542,8 @@ def _render_main_menu(display, game_state):
             y += 22
         y += 44
 
-    footer = font_small.render("ARROWS · ENTER SELECT · ESC BACK", True, muted)
+    footer = font_small.render(
+        "ARROWS · ENTER SELECT · ESC BACK · C CHARACTER", True, muted)
     display.blit(footer, (settings.WINDOW_W // 2 - footer.get_width() // 2,
                           settings.WINDOW_H - 60))
 

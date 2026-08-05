@@ -254,9 +254,14 @@ CHARACTER_SPRITE_SCALE = 1.8
 CHARACTER_SPEED_MIN   = 12.0
 CHARACTER_SPEED_MAX   = 26.0
 CHARACTER_SPEED_STEP  = 1.0
-CHARACTER_HEIGHT_MIN  = 0.85
-CHARACTER_HEIGHT_MAX  = 1.20
-CHARACTER_HEIGHT_STEP = 0.05
+# Height is stored and displayed in real centimeters. CHARACTER_HEIGHT_BASELINE_CM
+# is the height that maps to a 1.0 preview-sprite scale multiplier (see
+# character_render._render_scene); everything above/below it scales the
+# sprite proportionally.
+CHARACTER_HEIGHT_MIN  = 165.0
+CHARACTER_HEIGHT_MAX  = 205.0
+CHARACTER_HEIGHT_STEP = 1.0
+CHARACTER_HEIGHT_BASELINE_CM = 185.0
 
 # Pixel-wipe transition in/out of the menu (character_render.py) — short
 # and hard-edged, consistent with this game's chunky low-res look.
