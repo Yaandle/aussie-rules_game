@@ -6,6 +6,7 @@ Run with:  pip install pygame  →  python main.py
 import pygame
 
 import character_render
+import controller
 import field_render
 import goalkick_render
 import hero_render
@@ -21,6 +22,7 @@ def main():
     display = pygame.display.set_mode((settings.WINDOW_W, settings.WINDOW_H))
     pygame.display.set_caption("AFL Prototype")
     clock = pygame.time.Clock()
+    controller.init()
 
     game_state = GameState()
     running = True
@@ -32,7 +34,14 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             else:
+                controller.handle_device_event(event)
                 game_state.handle_input(event)
+
+        # Xbox controller: buttons/D-pad/stick become synthetic KEYDOWN
+        # events here, so every existing keyboard-driven menu and action
+        # picks them up with no changes of its own (see controller.py).
+        for synth_event in controller.poll_events():
+            game_state.handle_input(synth_event)
 
         game_state.update(dt)
         if game_state.phase == PHASE_HERO and game_state.hero is not None:

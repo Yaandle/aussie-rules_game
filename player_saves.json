@@ -1,0 +1,14 @@
+{
+  "all_players_default": {
+    "speed": 12.0,
+    "height": 185.0
+  },
+  "players": [
+    {
+      "id": 1,
+      "name": "PLAYER 1",
+      "speed": 12.0,
+      "height": 185.0
+    }
+  ]
+}

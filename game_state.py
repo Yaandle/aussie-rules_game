@@ -13,6 +13,7 @@ import math
 
 import pygame
 
+import controller
 import hero_levels
 import levels
 import mechanics
@@ -153,6 +154,17 @@ class GameState:
         self.timer = settings.QUARTER_LENGTH
         self.score = {"goals": 0, "behinds": 0}
 
+        # Kick-aim cursor: tracks the mouse by default; a controller's
+        # right stick can nudge it independently (see update()) so kick
+        # aiming works with either input with no mode-switching needed.
+        # This starting value only matters before the very first aim
+        # attempt — _enter_aim_mode() resets it fresh every time aim mode
+        # is actually entered (see below).
+        self._aim_cursor = [settings.WINDOW_W / 2, settings.WINDOW_H / 2]
+        self._last_mouse_pos = None   # see update()'s MODE_AIMING_KICK branch
+        self._aim_input_source = None  # "controller" | "mouse" | None — gates
+                                        # aim assist to controller use only
+
     # ── Setup / loading ─────────────────────────────────────────────
 
     def _load_layout(self, layout):
@@ -185,6 +197,8 @@ class GameState:
         self.run_since_bounce = 0.0
         self.pressure = 0.0
         self.aim_point = None
+        self._last_mouse_pos = None
+        self._aim_input_source = None
         self.show_menu = False
         self.carrier_moving = False
         self._pending_outcome = None
@@ -440,9 +454,22 @@ class GameState:
                 self._attempt_handball()
             elif event.key in (pygame.K_2, pygame.K_k):
                 if self.carrier is not None and not self.ball.in_flight:
-                    self.mode = MODE_AIMING_KICK
+                    self._enter_aim_mode()
             elif event.key in (pygame.K_3, pygame.K_SPACE):
                 self._bounce()
+            elif event.key == pygame.K_RETURN:
+                # Controller-friendly kick confirm (the A button and the
+                # right trigger both synthesize this — see controller.py's
+                # _BUTTON_KEYS/_TRIGGER_KEYS) at wherever the aim cursor
+                # currently sits; works for keyboard players too,
+                # confirming at the current mouse position. Left trigger
+                # is the controller's way into MODE_AIMING_KICK in the
+                # first place (synthesizes K_2, same as the '2'/'K' keys —
+                # see the K_2/K_k branch above), so the intended flow is
+                # LT to aim, right stick or mouse to point, RT (or A, or
+                # a click) to confirm.
+                if self.mode == MODE_AIMING_KICK and self.aim_point is not None:
+                    self._attempt_kick(self.aim_point)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.mode == MODE_AIMING_KICK and not self.show_menu:
@@ -454,6 +481,71 @@ class GameState:
         """Unproject a window click through the diorama camera onto the
         field's ground plane. None when the click is above the horizon."""
         return self.camera.unproject(*screen_pos)
+
+    def _enter_aim_mode(self):
+        """Start a fresh kick-aim: the cursor resets to dead ahead of the
+        carrier (their own projected screen position) instead of
+        wherever it was left from a previous aim attempt, or wherever
+        the mouse pointer happens to be sitting.
+
+        Controller players in particular would otherwise see the
+        reticle start somewhere arbitrary and unrelated to where they
+        actually are on the field — the two are only reset together
+        here, once, on entry; update()'s MODE_AIMING_KICK branch then
+        moves the cursor from this point via the right stick or the
+        mouse. Resetting _last_mouse_pos too means a stale mouse
+        position left over from before this aim attempt can't cause an
+        immediate jump the moment aiming starts (see update()).
+        """
+        self.mode = MODE_AIMING_KICK
+        default = None
+        carrier = self.carrier
+        if carrier is not None:
+            proj = self.camera.project(carrier.x, carrier.y, 0.0)
+            if proj is not None:
+                default = (proj[0], proj[1])
+        if default is None:
+            default = (settings.WINDOW_W / 2, settings.WINDOW_H / 2)
+        self._aim_cursor[0], self._aim_cursor[1] = default
+        self._last_mouse_pos = None
+        self._aim_input_source = None
+
+    def _apply_aim_assist(self, dt):
+        """Controller-only: a gentle screen-space pull toward the nearest
+        teammate once the cursor is close to them (settings.
+        AIM_ASSIST_RADIUS), so lining up a pass doesn't need
+        pixel-perfect stick control the way a mouse gets for free.
+
+        Deliberately soft, not a lock-on: this blends the cursor a
+        fraction of the way toward the target each frame (the fraction
+        set by AIM_ASSIST_STRENGTH), on top of whatever the raw stick
+        input already did this frame — it never overrides the stick, so
+        holding it away from the pull always wins. Called only while
+        self._aim_input_source == "controller" (see update()); mouse
+        aiming is precise enough on its own and never gets this.
+        """
+        carrier = self.carrier
+        target = None
+        target_dist = settings.AIM_ASSIST_RADIUS
+        for t in self.teammates:
+            if t is carrier:
+                continue
+            proj = self.camera.project(t.x, t.y, 0.0)
+            if proj is None:
+                continue
+            dist = math.hypot(proj[0] - self._aim_cursor[0],
+                              proj[1] - self._aim_cursor[1])
+            if dist < target_dist:
+                target_dist = dist
+                target = proj
+        if target is None:
+            return
+        k = min(1.0, settings.AIM_ASSIST_STRENGTH * dt)
+        self._aim_cursor[0] = max(0, min(settings.WINDOW_W,
+            self._aim_cursor[0] + (target[0] - self._aim_cursor[0]) * k))
+        self._aim_cursor[1] = max(0, min(settings.WINDOW_H,
+            self._aim_cursor[1] + (target[1] - self._aim_cursor[1]) * k))
+        self._aim_cursor[1] += (target[1] - self._aim_cursor[1]) * k
 
     # ── Actions ─────────────────────────────────────────────────────
 
@@ -572,9 +664,43 @@ class GameState:
         self.pressure = (mechanics.calculate_pressure(carrier, self.opponents)
                          if carrier else 0.0)
         if self.mode == MODE_AIMING_KICK:
-            self.aim_point = self._mouse_to_logical(pygame.mouse.get_pos())
+            # The right stick (if pushed) nudges the cursor incrementally;
+            # otherwise the mouse takes over, but only once it's actually
+            # moved since last frame — snapping to wherever the OS pointer
+            # happens to be sitting on *every* idle frame (the old
+            # behavior) fought with the controller for control, since the
+            # stick naturally recenters between pushes: the instant it did,
+            # the cursor would jump to the physical mouse position, however
+            # far away that happened to be, then jump again on the next
+            # stick input. _enter_aim_mode() resets both the cursor (to
+            # dead ahead of the carrier) and _last_mouse_pos (to None) on
+            # every fresh entry into this mode, so a stale mouse position
+            # from before this aim attempt can't cause that same jump
+            # right at the start either.
+            rdx, rdy = controller.right_stick()
+            mouse_pos = pygame.mouse.get_pos()
+            mouse_moved = (self._last_mouse_pos is not None
+                          and mouse_pos != self._last_mouse_pos)
+            if rdx or rdy:
+                self._aim_cursor[0] = max(0, min(settings.WINDOW_W,
+                    self._aim_cursor[0] + rdx * settings.AIM_CURSOR_SPEED * raw_dt))
+                self._aim_cursor[1] = max(0, min(settings.WINDOW_H,
+                    self._aim_cursor[1] + rdy * settings.AIM_CURSOR_SPEED * raw_dt))
+                self._aim_input_source = "controller"
+            elif mouse_moved:
+                self._aim_cursor[0], self._aim_cursor[1] = mouse_pos
+                self._aim_input_source = "mouse"
+            self._last_mouse_pos = mouse_pos
+            # Soft aim assist only while the controller is the device
+            # actually steering the cursor (see _apply_aim_assist) —
+            # mouse aiming stays exactly as precise/untouched as before.
+            if self._aim_input_source == "controller":
+                self._apply_aim_assist(raw_dt)
+            self.aim_point = self._mouse_to_logical(tuple(self._aim_cursor))
         else:
             self.aim_point = None
+            self._last_mouse_pos = None
+            self._aim_input_source = None
 
         focus = (self.ball.pos if self.ball.in_flight
                  else (carrier.pos if carrier else self.ball.pos))
@@ -650,10 +776,11 @@ class GameState:
         if carrier is None:
             return
         keys = pygame.key.get_pressed()
-        dx = (keys[pygame.K_RIGHT] or keys[pygame.K_d]) - \
-             (keys[pygame.K_LEFT] or keys[pygame.K_a])
-        dy = (keys[pygame.K_DOWN] or keys[pygame.K_s]) - \
-             (keys[pygame.K_UP] or keys[pygame.K_w])
+        cdx, cdy = controller.direction()   # Xbox D-pad / left stick
+        dx = (keys[pygame.K_RIGHT] or keys[pygame.K_d] or cdx > 0) - \
+             (keys[pygame.K_LEFT] or keys[pygame.K_a] or cdx < 0)
+        dy = (keys[pygame.K_DOWN] or keys[pygame.K_s] or cdy > 0) - \
+             (keys[pygame.K_UP] or keys[pygame.K_w] or cdy < 0)
         # FULL GAME runs at its own (slower) pace than SCENARIOS — see
         # settings.FULL_GAME_PLAYER_SPEED and entities.Player.move's speed
         # override. The character menu's Speed stat (character_state.py)

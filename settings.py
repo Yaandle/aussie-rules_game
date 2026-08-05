@@ -87,6 +87,23 @@ FULL_GAME_PLAYER_SPEED = 19.0
 HANDBALL_RANGE  = 34.0    # max distance to a teammate for a handball
 KICK_MAX_RANGE  = 88.0    # beyond this a kick can't be aimed
 BALL_FLIGHT_SPEED = 95.0  # logical units per second while ball is airborne
+# Display pixels/second the kick-aim cursor moves under a controller's
+# right stick (see game_state.GameState.update / controller.right_stick).
+# Only used while a controller is actively pushing that stick — mouse
+# aiming is untouched. Trimmed down from an initial 900 — full stick
+# deflection felt too twitchy/hard to place precisely; retune to taste.
+AIM_CURSOR_SPEED = 550.0
+
+# Controller-only kick-aim assist: a gentle screen-space pull toward the
+# nearest teammate once the cursor is close to them, so lining up a pass
+# doesn't need pixel-perfect stick control the way a mouse gets for
+# free. Deliberately soft — it's a per-frame blend toward the target,
+# not a hard lock, so pushing the stick away from the pull always wins;
+# see game_state.GameState._apply_aim_assist. Mouse aiming is precise
+# enough on its own and never gets this.
+AIM_ASSIST_RADIUS = 70.0     # screen px: cursor-to-teammate distance
+                              # within which the pull starts
+AIM_ASSIST_STRENGTH = 6.0    # pull rate; higher = snaps in faster
 
 # ── Slow-motion decision mode ───────────────────────────────────────
 SLOWMO_FACTOR = 0.25      # time dilation while lining up a kick

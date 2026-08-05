@@ -22,6 +22,7 @@ import math
 
 import pygame
 
+import controller
 import goalkick_state as gks
 import hero_render
 import mechanics
@@ -326,11 +327,23 @@ def _render_hud(display, state):
 
 
 def _render_controls(display):
-    """Controls overlay: dims the paused range, lists the bindings."""
+    """Controls overlay: dims the paused range, lists the bindings.
+
+    Xbox equivalents (see controller.py) are appended live when a
+    controller is connected. The confirm row lists A and RT — both
+    synthesize K_RETURN, which this screen's handle_input already
+    accepts alongside SPACE — RB (also SPACE, via the main game's bounce
+    binding) technically works here too but isn't the intended gesture
+    for this screen, so it's left off to keep the row readable."""
     font, font_small, font_big = overlays._fonts()
+    pad = controller.is_connected()
+
+    def key_label(keys, xbox):
+        return f"{keys} · {xbox}" if pad else keys
+
     display.blit(overlays._dim(160), (0, 0))
 
-    box = pygame.Rect(0, 0, 540, 300)
+    box = pygame.Rect(0, 0, 600, 300)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
     shadow = overlays._soft_shadow(box.w, box.h)
     display.blit(shadow, (box.x - (shadow.get_width() - box.w) // 2,
@@ -341,16 +354,16 @@ def _render_controls(display):
     title = font_big.render("CONTROLS", True, pygame.Color(settings.CREAM))
     display.blit(title, (box.centerx - title.get_width() // 2, box.y + 22))
 
-    rows = (("ARROWS / WASD", "WALK THE MARK  ·  STEER YOUR AIM"),
-            ("SPACE / ENTER", "CONFIRM MARK  ·  LOCK THE METER"),
-            ("ESC", "CANCEL ATTEMPT / MENU"),
-            ("M", "OPEN · CLOSE MENU"))
+    rows = ((key_label("ARROWS / WASD", "STICK"), "WALK THE MARK  ·  STEER YOUR AIM"),
+            (key_label("SPACE / ENTER", "A / RT"), "CONFIRM MARK  ·  LOCK THE METER"),
+            (key_label("ESC", "B"), "CANCEL ATTEMPT / MENU"),
+            (key_label("M", "START"), "OPEN · CLOSE MENU"))
     muted = pygame.Color(_MUTED)
     for i, (key, action) in enumerate(rows):
         y = box.y + 76 + i * 38
         display.blit(font.render(key, True, pygame.Color(settings.YELLOW)),
                      (box.x + 36, y))
-        display.blit(font.render(action, True, muted), (box.x + 230, y))
+        display.blit(font.render(action, True, muted), (box.x + 280, y))
 
     footer = font_small.render(
         "READ THE WIND, STEER YOUR AIM, THEN TIME YOUR STRIKE  ·  GAME PAUSED",

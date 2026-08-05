@@ -80,6 +80,16 @@ def _panel_box(display, rect):
 
 
 def _footer(display, text, y):
+    """Inline hint line, e.g. "ARROWS · ENTER SELECT/ADJUST · ESC BACK".
+
+    Out of scope for the controller-support pass that added Xbox hints
+    to the three popup CONTROLS overlays (render.py / hero_render.py /
+    goalkick_render.py's `_render_menu`/`_render_controls`) — this menu
+    already reads controller D-pad/stick/A/B/START input fine (see
+    controller.py; every existing handle_input picks up its synthetic
+    KEYDOWN events for free), it just doesn't advertise it inline here
+    yet. Revisit if that's confusing in practice.
+    """
     font, font_small, font_big = render._fonts()
     cream = pygame.Color(settings.CREAM)
     label = font_small.render(text, True, cream)

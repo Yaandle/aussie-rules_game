@@ -13,6 +13,7 @@ import math
 
 import pygame
 
+import controller
 import hero_levels
 import render
 import settings
@@ -468,8 +469,20 @@ def _render_hud(display, state):
 
 
 def _render_controls(display):
-    """Controls overlay: dims the paused level, lists the swipe bindings."""
+    """Controls overlay: dims the paused level, lists the swipe bindings.
+
+    AFL Hero's core mechanic (drawing a run/handball/kick) is mouse-drag
+    only — no controller equivalent exists for it, so those rows are
+    left as-is even with a pad connected. Only the two rows that do have
+    a real controller binding (ESC, M — see controller.py's B/Start
+    mapping) get one appended, live. RETRY has no controller binding at
+    all, so it's left alone too — nothing here would be accurate."""
     font, font_small, font_big = render._fonts()
+    pad = controller.is_connected()
+
+    def key_label(keys, xbox):
+        return f"{keys} · {xbox}" if pad else keys
+
     display.blit(render._dim(160), (0, 0))
 
     box = pygame.Rect(0, 0, 560, 360)
@@ -486,9 +499,9 @@ def _render_controls(display):
     rows = (("L-DRAG LONG", "KICK — BEND THE SWIPE TO CURL"),
             ("L-DRAG SHORT", "HANDBALL TO A TEAMMATE"),
             ("R-DRAG", "DRAW A RUN PATH"),
-            ("ESC", "CANCEL DRAG / BACK"),
+            (key_label("ESC", "B"), "CANCEL DRAG / BACK"),
             ("R", "RETRY LEVEL"),
-            ("M", "OPEN · CLOSE THIS MENU"))
+            (key_label("M", "START"), "OPEN · CLOSE THIS MENU"))
     muted = pygame.Color("#b3ac97")
     for i, (key, action) in enumerate(rows):
         y = box.y + 76 + i * 38

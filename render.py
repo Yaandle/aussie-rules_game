@@ -17,6 +17,7 @@ import random
 
 import pygame
 
+import controller
 import hero_levels
 import levels
 import settings
@@ -452,12 +453,21 @@ def _draw_player_sprite(surface, x, y, team, walking, walk_frame, variant=0):
 # ── Scoreboards & HUD (display resolution) ──────────────────────────
 
 def _render_menu(display):
-    """Controls overlay: dims the paused scene, lists every binding."""
+    """Controls overlay: dims the paused scene, lists every binding.
+
+    Xbox equivalents (see controller.py) are appended to the key column,
+    live, whenever a controller is connected — box width and the action
+    column's x-offset are both a bit wider than the keyboard-only layout
+    needed, to give the longer combined labels room."""
     font, font_small, font_big = _fonts()
+    pad = controller.is_connected()
+
+    def key_label(keys, xbox):
+        return f"{keys} · {xbox}" if pad else keys
 
     display.blit(_dim(160), (0, 0))
 
-    box = pygame.Rect(0, 0, 540, 396)
+    box = pygame.Rect(0, 0, 600, 396)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
     shadow = _soft_shadow(box.w, box.h)
     display.blit(shadow, (box.x - (shadow.get_width() - box.w) // 2,
@@ -468,19 +478,19 @@ def _render_menu(display):
     title = font_big.render("CONTROLS", True, pygame.Color(settings.CREAM))
     display.blit(title, (box.centerx - title.get_width() // 2, box.y + 22))
 
-    rows = (("WASD / ARROWS", "MOVE"),
-            ("1 / Q", "HANDBALL"),
-            ("2 / K", "KICK — CLICK TO AIM"),
-            ("3 / SPACE", "BOUNCE"),
-            ("ESC", "CANCEL AIM / MENU"),
-            ("M", "OPEN · CLOSE MENU"),
+    rows = ((key_label("WASD / ARROWS", "STICK"), "MOVE"),
+            (key_label("1 / Q", "X"), "HANDBALL"),
+            (key_label("2 / K", "LT"), "KICK — CLICK TO AIM"),
+            (key_label("3 / SPACE", "RB"), "BOUNCE"),
+            (key_label("ESC", "B"), "CANCEL AIM / MENU"),
+            (key_label("M", "START"), "OPEN · CLOSE MENU"),
             ("BACKSPACE", "QUIT TO MAIN MENU"))
     muted = pygame.Color("#b3ac97")
     for i, (key, action) in enumerate(rows):
         y = box.y + 76 + i * 38
         display.blit(font.render(key, True, pygame.Color(settings.YELLOW)),
                      (box.x + 36, y))
-        display.blit(font.render(action, True, muted), (box.x + 250, y))
+        display.blit(font.render(action, True, muted), (box.x + 280, y))
 
     footer = font_small.render("BOUNCE EVERY 15M OF RUNNING  ·  GAME PAUSED",
                                True, muted)

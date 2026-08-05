@@ -41,6 +41,7 @@ import math
 
 import pygame
 
+import controller
 import mechanics
 import settings
 from entities import Ball, Player
@@ -219,8 +220,9 @@ class GoalKickState:
         also watching right now supplies the other half, a smaller
         timing wobble around wherever this points)."""
         keys = pygame.key.get_pressed()
-        turn = (keys[pygame.K_RIGHT] or keys[pygame.K_d]) - \
-               (keys[pygame.K_LEFT] or keys[pygame.K_a])
+        cdx, _ = controller.direction()
+        turn = (keys[pygame.K_RIGHT] or keys[pygame.K_d] or cdx > 0) - \
+               (keys[pygame.K_LEFT] or keys[pygame.K_a] or cdx < 0)
         self.aim_bias_deg = max(-settings.GOALKICK_AIM_BIAS_MAX, min(
             settings.GOALKICK_AIM_BIAS_MAX,
             self.aim_bias_deg + turn * settings.GOALKICK_AIM_BIAS_SPEED * dt))
@@ -228,10 +230,11 @@ class GoalKickState:
     def _update_position(self, dt):
         """Poll held keys to walk the mark around its allowed arc."""
         keys = pygame.key.get_pressed()
-        turn = (keys[pygame.K_RIGHT] or keys[pygame.K_d]) - \
-               (keys[pygame.K_LEFT] or keys[pygame.K_a])
-        step = (keys[pygame.K_UP] or keys[pygame.K_w]) - \
-               (keys[pygame.K_DOWN] or keys[pygame.K_s])
+        cdx, cdy = controller.direction()
+        turn = (keys[pygame.K_RIGHT] or keys[pygame.K_d] or cdx > 0) - \
+               (keys[pygame.K_LEFT] or keys[pygame.K_a] or cdx < 0)
+        step = (keys[pygame.K_UP] or keys[pygame.K_w] or cdy < 0) - \
+               (keys[pygame.K_DOWN] or keys[pygame.K_s] or cdy > 0)
 
         self.mark_angle_deg = max(-settings.GOALKICK_MAX_ANGLE, min(
             settings.GOALKICK_MAX_ANGLE,
