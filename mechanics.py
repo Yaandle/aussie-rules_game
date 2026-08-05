@@ -140,8 +140,12 @@ def resolve_kick(carrier, target_point, opponents, teammates, pressure):
                                    if t.distance_to(target_point) <= settings.CONTEST_RADIUS
                                    and t is not carrier]
         winner = resolve_contest(target_point, candidates)
-        result = "contest"
-        return {"result": result, "winner": winner}
+        # "candidates" lets a caller run this as a live reaction contest
+        # (contest_minigame.py) between the two closest players instead
+        # of just taking "winner", the instant proximity-weighted roll —
+        # "winner" stays here too so contests-disabled callers keep
+        # today's exact behavior with no extra branching.
+        return {"result": "contest", "winner": winner, "candidates": candidates}
 
     if random.random() < kick_accuracy(pressure, distance):
         receivers = [t for t in teammates
@@ -350,14 +354,19 @@ def is_scoring_attempt(kick_origin, target_point, goal_center):
     return angle <= settings.SCORING_MAX_ANGLE
 
 
-def resolve_scoring_attempt(kick_origin, target_point):
+def resolve_scoring_attempt(kick_origin, target_point, goal_center=settings.GOAL_RIGHT):
     """Resolve a shot on goal into "goal", "behind", or "miss".
 
     Longer and more angled shots are less likely to split the middle.
     Distance and angle each erode goal probability; a wide draw becomes
     a behind, and the worst rolls miss entirely.
+
+    `goal_center` defaults to GOAL_RIGHT (every caller before this one
+    only ever shot that way — see AFL Hero's hero_state.py, which still
+    doesn't pass one); game_state.py passes GOAL_LEFT for an AI carrier
+    attacking the other way, so both teams' shots resolve symmetrically.
     """
-    goal = settings.GOAL_RIGHT
+    goal = goal_center
     distance = _dist(kick_origin, goal)
     dist_factor = min(distance / settings.SCORING_ARC_RADIUS, 1.0)
 

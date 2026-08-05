@@ -13,10 +13,13 @@ import math
 
 import pygame
 
+import ai_control
+import contest_minigame
 import controller
 import hero_levels
 import levels
 import mechanics
+import possession
 import settings
 from character_state import CharacterState
 from entities import Ball, Player
@@ -27,6 +30,18 @@ from hero_state import HeroState
 # Input modes (while playing)
 MODE_IDLE = "idle"
 MODE_AIMING_KICK = "aiming_kick"
+
+# Directional prompt keys read while a tackle/50-50 contest is live (see
+# _contest_input) — arrow keys and numpad, per the contest's own spec;
+# a connected gamepad's D-pad already arrives as synthetic K_UP/DOWN/
+# LEFT/RIGHT KEYDOWN events (see controller.poll_events), so it needs no
+# entry of its own here.
+_CONTEST_DIRECTION_KEYS = {
+    pygame.K_UP: "UP", pygame.K_KP8: "UP",
+    pygame.K_DOWN: "DOWN", pygame.K_KP2: "DOWN",
+    pygame.K_LEFT: "LEFT", pygame.K_KP4: "LEFT",
+    pygame.K_RIGHT: "RIGHT", pygame.K_KP6: "RIGHT",
+}
 
 # App phases
 PHASE_MENU = "menu"
@@ -123,6 +138,19 @@ def _build_full_game_layout():
 # Default kickoff layout for full game mode.
 FULL_GAME_LAYOUT = _build_full_game_layout()
 
+# ── Mode config (possession/contest toggles) ─────────────────────────
+# FULL GAME always uses these defaults untouched; a scenario overrides
+# individual keys via an optional "config" dict in its levels.py entry
+# (see start_scenario) — this is the single place mode differences are
+# expressed, so feature code (kickouts, contests, the AI decision loop)
+# never has to branch on game_mode itself.
+DEFAULT_MODE_CONFIG = {
+    "starting_possession": "human",   # "human" | "ai" — who holds the ball on load
+    "scoring_enabled": True,
+    "contests_enabled": True,
+    "ai_enabled": True,
+}
+
 # EXTEND: multi-quarter match structure
 # EXTEND: two controllable teams in full game mode
 # EXTEND: interchange bench (currently on-field 16s only)
@@ -148,6 +176,7 @@ class GameState:
         self.scenario = None             # active levels.SCENARIOS entry
         self.scenario_index = 0
         self.result = None               # "win" | "fail" | "fulltime"
+        self.mode_config = dict(DEFAULT_MODE_CONFIG)  # see start_full_game/start_scenario
 
         # Gameplay state exists from the start so render can always read it.
         self._load_layout(FULL_GAME_LAYOUT)
@@ -176,10 +205,20 @@ class GameState:
         # Kickoff spot per player, used by the FULL GAME off-ball AI to
         # hold rough formation shape (see mechanics.update_off_ball).
         self._home_positions = {id(p): p.pos for p in self.players}
-        carrier = self.players[0]
+        # Which side starts with it — "human" (default, unchanged
+        # behavior) or "ai" for a scenario that wants to test getting
+        # the ball back off the AI (see mode_config / levels.py's
+        # "config" field).
+        starting_pool = red if self.mode_config.get("starting_possession") == "ai" else yellow
+        carrier = starting_pool[0]
         carrier.is_ball_carrier = True
         self.ball = Ball(carrier.x, carrier.y)
         self.ball.give_to(carrier)
+        self.possession_state = possession.HELD_PLAYER
+        self.active_contest = None
+        self.ai_hold_timer = 0.0
+        self.contest_cooldown = 0.0
+        self._contest_direction_queue = []
         # Both classic modes share AFL Hero's diorama presentation, but use
         # their own camera tuning (settings.MAIN_CAM_*) for a slightly more
         # vertical, more fixed "broadcast" feel that differs from Hero mode.
@@ -202,7 +241,6 @@ class GameState:
         self.show_menu = False
         self.carrier_moving = False
         self._pending_outcome = None
-        self._turnover_timer = 0.0
         self.flash = None
         self.bounce_tick_timer = 0.0
         self.message = ""
@@ -213,6 +251,7 @@ class GameState:
         self.game_mode = "full"
         self.scenario = None
         self.result = None
+        self.mode_config = dict(DEFAULT_MODE_CONFIG)
         self._load_layout(FULL_GAME_LAYOUT)
         self.timer = settings.QUARTER_LENGTH
         self.score = {"goals": 0, "behinds": 0}
@@ -224,6 +263,11 @@ class GameState:
         self.scenario_index = index
         self.scenario = levels.SCENARIOS[index]
         self.result = None
+        # A scenario's optional "config" dict overrides individual
+        # DEFAULT_MODE_CONFIG keys (starting_possession/scoring_enabled/
+        # contests_enabled/ai_enabled) — most scenarios omit it and get
+        # exactly today's behavior.
+        self.mode_config = {**DEFAULT_MODE_CONFIG, **self.scenario.get("config", {})}
         self._load_layout(self.scenario)
         self.timer = self.scenario["time_limit"]
         self.score = {"goals": 0, "behinds": 0}
@@ -434,6 +478,9 @@ class GameState:
     # ── Playing input ───────────────────────────────────────────────
 
     def _playing_input(self, event):
+        if self.active_contest is not None:
+            self._contest_input(event)
+            return
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_m:
                 self.show_menu = not self.show_menu
@@ -453,7 +500,8 @@ class GameState:
             if event.key in (pygame.K_1, pygame.K_q):
                 self._attempt_handball()
             elif event.key in (pygame.K_2, pygame.K_k):
-                if self.carrier is not None and not self.ball.in_flight:
+                if (self.carrier is not None and self.carrier.team == settings.YELLOW
+                        and not self.ball.in_flight):
                     self._enter_aim_mode()
             elif event.key in (pygame.K_3, pygame.K_SPACE):
                 self._bounce()
@@ -476,6 +524,21 @@ class GameState:
                 target = self._mouse_to_logical(event.pos)
                 if target is not None:
                     self._attempt_kick(target)
+
+    def _contest_input(self, event):
+        """While a tackle/50-50 contest is live, arrow keys and numpad
+        directions (see _CONTEST_DIRECTION_KEYS) queue a press for
+        _update_contest to consume next frame — a connected gamepad's
+        D-pad arrives here too, already as synthetic KEYDOWN events (see
+        controller.poll_events), so it needs no separate handling.
+        Every other playing-input binding is suspended for the duration
+        (see _playing_input) — the rest of the game is frozen anyway.
+        """
+        if event.type != pygame.KEYDOWN:
+            return
+        direction = _CONTEST_DIRECTION_KEYS.get(event.key)
+        if direction is not None:
+            self._contest_direction_queue.append(direction)
 
     def _mouse_to_logical(self, screen_pos):
         """Unproject a window click through the diorama camera onto the
@@ -550,9 +613,15 @@ class GameState:
     # ── Actions ─────────────────────────────────────────────────────
 
     def _attempt_handball(self):
-        """Handball to the nearest teammate in range; resolves via mechanics."""
+        """Handball to the nearest teammate in range; resolves via mechanics.
+
+        Human (YELLOW) only — ai_control never calls this (its
+        placeholder loop only runs/kicks, see its HOOK comment), so
+        there's no AI path that needs this team-symmetric the way
+        _attempt_kick had to become.
+        """
         carrier = self.carrier
-        if carrier is None or self.ball.in_flight:
+        if carrier is None or carrier.team != settings.YELLOW or self.ball.in_flight:
             return
         receivers = [t for t in self.teammates
                      if t is not carrier
@@ -574,7 +643,14 @@ class GameState:
         self.mode = MODE_IDLE
 
     def _attempt_kick(self, target_point):
-        """Kick toward a clicked point: shot on goal or a field kick."""
+        """Kick toward a target point: shot on goal or a field kick.
+
+        Team-symmetric: works identically whichever team's player is
+        carrying (see ai_control.decide_next_action, which calls this
+        exact method for the AI's placeholder kick) — the attacking goal,
+        "own"/"opposing" player lists, and possession/turnover outcome
+        are all derived from carrier.team rather than assuming YELLOW.
+        """
         carrier = self.carrier
         if carrier is None or self.ball.in_flight:
             return
@@ -582,15 +658,31 @@ class GameState:
             self._show_message("TOO FAR")
             return
 
-        pressure = mechanics.calculate_pressure(carrier, self.opponents)
+        own_team = self.teammates if carrier.team == settings.YELLOW else self.opponents
+        opposing_team = self.opponents if carrier.team == settings.YELLOW else self.teammates
+        pressure = mechanics.calculate_pressure(carrier, opposing_team)
+        goal = possession.attacking_goal(carrier.team)
 
-        if mechanics.is_scoring_attempt(carrier.pos, target_point, settings.GOAL_RIGHT):
-            result = mechanics.resolve_scoring_attempt(carrier.pos, target_point)
-            self._pending_outcome = {"type": "score", "result": result}
+        if (self.mode_config.get("scoring_enabled", True)
+                and mechanics.is_scoring_attempt(carrier.pos, target_point, goal)):
+            result = mechanics.resolve_scoring_attempt(carrier.pos, target_point, goal)
+            self._pending_outcome = {"type": "score", "result": result, "team": carrier.team}
         else:
-            outcome = mechanics.resolve_kick(carrier, target_point, self.opponents,
-                                             self.teammates, pressure)
-            if outcome["winner"].team == settings.YELLOW:
+            outcome = mechanics.resolve_kick(carrier, target_point, opposing_team,
+                                             own_team, pressure)
+            candidates = outcome.get("candidates") or []
+            if (outcome["result"] == "contest"
+                    and self.mode_config.get("contests_enabled", True)
+                    and len(candidates) >= 2):
+                # Defer the dice-roll to a live reaction contest instead
+                # of resolving it instantly — the two players actually
+                # closest to the drop (not just the first two in
+                # resolve_kick's unsorted opponents-then-teammates list)
+                # contest it.
+                nearest_two = sorted(candidates,
+                                     key=lambda p: p.distance_to(target_point))[:2]
+                self._pending_outcome = {"type": "contest", "candidates": nearest_two}
+            elif outcome["winner"].team == carrier.team:
                 self._pending_outcome = {"type": "possession",
                                          "player": outcome["winner"]}
             else:
@@ -602,8 +694,13 @@ class GameState:
         self.mode = MODE_IDLE
 
     def _bounce(self):
-        """Bounce the ball to legally continue running (resets the run meter)."""
-        if self.carrier is None or self.ball.in_flight:
+        """Bounce the ball to legally continue running (resets the run meter).
+
+        Human (YELLOW) only — the AI's placeholder loop doesn't play by
+        the bounce rule yet (see ai_control.py's HOOK comment).
+        """
+        carrier = self.carrier
+        if carrier is None or carrier.team != settings.YELLOW or self.ball.in_flight:
             return
         self.run_since_bounce = 0.0
         self.bounce_tick_timer = settings.BOUNCE_TICK_DURATION
@@ -624,6 +721,21 @@ class GameState:
         if self.phase != PHASE_PLAYING or self.show_menu:
             return
 
+        # A live tackle/50-50 contest freezes the rest of the game (see
+        # design note in possession.py's IN_CONTEST) — this is the one
+        # branch point, simplest first pass rather than only freezing
+        # the two participants.
+        if self.active_contest is not None:
+            self._update_contest(dt)
+            return
+
+        # DEAD_BALL_KICKOUT only exists to mark the single frame the
+        # kickout taker was just placed on — a kickout plays out exactly
+        # like any other carry from here on (human input or
+        # ai_control.decide_next_action), so it's promoted immediately.
+        if self.possession_state == possession.DEAD_BALL_KICKOUT:
+            self.possession_state = possession.HELD_PLAYER
+
         # Slow-motion decision mode: the whole world breathes slower
         # while a kick is being lined up. The camera keeps real time so
         # its follow and zoom stay smooth through the dilation.
@@ -636,7 +748,12 @@ class GameState:
             self._time_expired()
             return
 
+        # Human carrier: keyboard/controller polling (_update_movement
+        # no-ops for a RED carrier). AI carrier: ai_control's placeholder
+        # loop (no-ops for a YELLOW carrier) — see its HOOK comment for
+        # where real decision-making eventually replaces this.
         self._update_movement(dt)
+        ai_control.decide_next_action(self, dt)
 
         # Closing defenders converge while someone holds the ball. In
         # FULL GAME (not scenarios — see FORMATION_LINES/_load_layout
@@ -644,35 +761,52 @@ class GameState:
         # kickoff formation shape, blended toward the ball, so a
         # 16-a-side roster doesn't stand frozen off the ball.
         #
-        # `opponents` is fetched once and reused below (team membership
-        # never changes mid-match — see entities.Player — so re-deriving
-        # it a second time after the ball-flight/turnover handling further
-        # down would just repeat the same self.players scan for the same
-        # result). `carrier` still gets re-fetched after that section,
-        # since a completed ball flight can actually hand possession to a
-        # different player (_apply_pending_outcome) — that one isn't safe
-        # to cache.
+        # `carrier` gets re-fetched after the ball-flight/turnover
+        # handling further down, since a completed ball flight can hand
+        # possession to a different player (_apply_pending_outcome) —
+        # that one isn't safe to cache across this block.
         carrier = self.carrier
-        opponents = self.opponents
         if carrier is not None:
             home = self._home_positions if self.game_mode == "full" else None
-            mechanics.update_defenders(opponents, carrier.pos, dt, home)
+            # Whichever team ISN'T carrying closes in (this used to always
+            # be RED chasing YELLOW — now that RED can carry too, the
+            # chasing/resting sides swap with carrier.team so a human
+            # defender actually converges on an AI carrier the same way
+            # RED converges on the human, instead of RED harmlessly
+            # "chasing" its own teammate).
+            defending_team = self.opponents if carrier.team == settings.YELLOW else self.teammates
+            carrying_teammates = self.teammates if carrier.team == settings.YELLOW else self.opponents
+            mechanics.update_defenders(defending_team, carrier.pos, dt, home)
             if home is not None:
-                resting = [t for t in self.teammates if not t.is_ball_carrier]
+                resting = [t for t in carrying_teammates if not t.is_ball_carrier]
                 mechanics.update_off_ball(resting, home, carrier.pos, dt)
+
+        self.contest_cooldown = max(0.0, self.contest_cooldown - dt)
+
+        # A defender closing to tackle range starts a live contest
+        # instead of holding at arm's length forever (see
+        # possession.find_tackle_trigger / TACKLE_TRIGGER_RADIUS).
+        # Gated on contest_cooldown so a just-resolved contest's still-
+        # adjacent participants (see _separate_after_contest) don't
+        # immediately restart another one back to back.
+        if (self.possession_state == possession.HELD_PLAYER
+                and self.mode_config.get("contests_enabled", True)
+                and self.contest_cooldown <= 0.0):
+            participants = possession.find_tackle_trigger(self)
+            if participants is not None:
+                self._start_contest(participants, "tackle")
+                return
 
         self.ball.follow_carrier()
         if self.ball.advance_flight(dt):
             self._apply_pending_outcome()
 
-        if self._turnover_timer > 0.0:
-            self._turnover_timer -= dt
-            if self._turnover_timer <= 0.0:
-                self._reset_after_turnover()
-
         carrier = self.carrier
-        self.pressure = (mechanics.calculate_pressure(carrier, opponents)
-                         if carrier else 0.0)
+        if carrier is not None:
+            opposing = self.opponents if carrier.team == settings.YELLOW else self.teammates
+            self.pressure = mechanics.calculate_pressure(carrier, opposing)
+        else:
+            self.pressure = 0.0
         if self.mode == MODE_AIMING_KICK:
             # The right stick (if pushed) nudges the cursor incrementally;
             # otherwise the mouse takes over, but only once it's actually
@@ -780,10 +914,16 @@ class GameState:
         self.result = "fulltime" if self.game_mode == "full" else "fail"
 
     def _update_movement(self, dt):
-        """Poll held keys to move the carrier; enforce the running-bounce rule."""
+        """Poll held keys to move the carrier; enforce the running-bounce rule.
+
+        Human (YELLOW) carrier only — an AI (RED) carrier is driven by
+        ai_control.decide_next_action instead (see update()), so this
+        no-ops rather than reading keyboard/controller input into
+        whichever player happens to be carrying.
+        """
         carrier = self.carrier
         self.carrier_moving = False
-        if carrier is None:
+        if carrier is None or carrier.team != settings.YELLOW:
             return
         keys = pygame.key.get_pressed()
         cdx, cdy = controller.direction()   # Xbox D-pad / left stick
@@ -809,10 +949,8 @@ class GameState:
         # Running too far past the bounce limit is a turnover.
         if self.run_since_bounce >= settings.BOUNCE_INTERVAL * 1.5:
             nearest = min(self.opponents, key=lambda o: o.distance_to(carrier.pos))
-            carrier.is_ball_carrier = False
-            self.ball.give_to(nearest)
+            self._give_possession(nearest)
             self._show_message("RAN TOO FAR - TURNOVER")
-            self.run_since_bounce = 0.0
             self.mode = MODE_IDLE
             self._register_turnover()
 
@@ -826,29 +964,49 @@ class GameState:
 
         if outcome["type"] == "possession":
             self._give_possession(outcome["player"])
-            self.run_since_bounce = 0.0
 
         elif outcome["type"] == "turnover":
-            self.ball.give_to(outcome["player"])
+            self._give_possession(outcome["player"])
             self._show_message("TURNOVER")
             self._register_turnover()
 
+        elif outcome["type"] == "contest":
+            self._start_contest(outcome["candidates"], "loose_ball")
+
         elif outcome["type"] == "score":
-            self._apply_score(outcome["result"])
+            self._apply_score(outcome["result"], outcome["team"])
 
-    def _apply_score(self, result):
-        """Register a goal, behind, or miss; check scenario objectives."""
+    def _apply_score(self, result, team):
+        """Register a goal, behind, or miss for whichever team took the
+        shot, and check scenario objectives.
+
+        Team-symmetric: an AI (RED) shot updates the same score dict
+        under "opp_goals"/"opp_behinds" instead of forking into a
+        separate code path — see mode/HUD note below.
+        """
+        yellow_scored = team == settings.YELLOW
         if result == "goal":
-            self.score["goals"] += 1
-            self.flash = {"color": settings.YELLOW, "timer": settings.FLASH_DURATION}
-            self._show_message("GOAL - 6 POINTS")
+            if yellow_scored:
+                self.score["goals"] += 1
+                self._show_message("GOAL - 6 POINTS")
+            else:
+                self.score["opp_goals"] = self.score.get("opp_goals", 0) + 1
+                self._show_message("OPPONENT GOAL")
+            self.flash = {"color": settings.YELLOW if yellow_scored else settings.RED,
+                          "timer": settings.FLASH_DURATION}
         elif result == "behind":
-            self.score["behinds"] += 1
+            if yellow_scored:
+                self.score["behinds"] += 1
+                self._show_message("BEHIND - 1 POINT")
+            else:
+                self.score["opp_behinds"] = self.score.get("opp_behinds", 0) + 1
+                self._show_message("OPPONENT BEHIND")
             self.flash = {"color": settings.BG, "timer": settings.FLASH_DURATION}
-            self._show_message("BEHIND - 1 POINT")
 
-        # Scenario objectives resolve before any restart.
-        if self.game_mode == "scenario":
+        # Scenario objectives are about the human's performance — an AI
+        # score never completes or fails one (there's no "concede a
+        # score" scenario objective in this pass; see levels.py).
+        if self.game_mode == "scenario" and yellow_scored:
             objective = self.scenario["objective"]
             if objective == "comeback":
                 # Not a one-score win — keep playing (fall through to the
@@ -866,41 +1024,99 @@ class GameState:
                 self.unlocked = max(self.unlocked, self.scenario_index + 2)
                 return
 
-        if result in ("goal", "behind"):
+        if result == "goal":
             self._reset_to_kickoff()
             # EXTEND: ruck contest at start of play / after a goal
+        elif result == "behind":
+            # The defending team kicks out from their goal square (see
+            # possession.resolve_behind) instead of the plain center-
+            # bounce reset a goal gets.
+            possession.resolve_behind(self, team)
         else:  # miss → turnover where the ball landed
-            nearest = min(self.opponents,
-                          key=lambda o: o.distance_to(self.ball.pos))
-            self.ball.give_to(nearest)
+            defending_team = self.opponents if yellow_scored else self.teammates
+            nearest = min(defending_team, key=lambda p: p.distance_to(self.ball.pos))
+            self._give_possession(nearest)
             self._show_message("MISS - TURNOVER")
             self._register_turnover()
 
     def _register_turnover(self):
-        """Shared turnover handling: scenario fail check, then the reset timer."""
+        """Scenario fail-on-turnover check.
+
+        Possession itself is applied immediately by _give_possession
+        wherever this is called from — there's no passive delay-then-
+        auto-return to the human anymore now that an AI (RED) carrier
+        actually plays out its possession (see ai_control.py) instead
+        of just holding the spot for TURNOVER_RESET_DELAY seconds.
+        """
         if (self.game_mode == "scenario"
                 and self.scenario.get("fail_on_turnover")):
             self.phase = PHASE_END
             self.result = "fail"
-            return
-        self._turnover_timer = settings.TURNOVER_RESET_DELAY
 
     def _give_possession(self, player):
-        """Make the given YELLOW player the new ball-carrier."""
+        """Make the given player the new ball-carrier (either team)."""
         for p in self.players:
             p.is_ball_carrier = False
         player.is_ball_carrier = True
         self.ball.give_to(player)
-
-    def _reset_after_turnover(self):
-        """RED's passive possession ends: restart with the nearest YELLOW player.
-
-        A stand-in for real turnover play until RED can attack.
-        """
-        nearest = min(self.teammates,
-                      key=lambda t: t.distance_to(self.ball.pos))
-        self._give_possession(nearest)
+        self.possession_state = possession.HELD_PLAYER
         self.run_since_bounce = 0.0
+
+    def _start_contest(self, participants, kind):
+        """Freeze play and begin a tackle/50-50 reaction contest between
+        exactly two players (see contest_minigame.py).
+
+        Also drops any in-progress kick-aim: a tackle can interrupt the
+        human mid-aim (the trigger check only looks at possession_state,
+        not self.mode), and whoever's carrying can change once the
+        contest resolves — a stale MODE_AIMING_KICK left pointing at the
+        old aim target/carrier must not survive into that.
+        """
+        self.active_contest = contest_minigame.start(participants, kind)
+        self.possession_state = possession.IN_CONTEST
+        self._contest_direction_queue = []
+        self.mode = MODE_IDLE
+
+    def _update_contest(self, dt):
+        """Advance the live contest one frame; apply its result once
+        resolved (winner keeps/gains possession outright — see the
+        design note in contest_minigame.py on tackle/50-50 outcomes).
+
+        A resolved TACKLE contest leaves the two participants standing
+        right next to each other, well inside TACKLE_TRIGGER_RADIUS —
+        without separating them, the very next frame's trigger check
+        (see update()) would see the same pair still in range and start
+        a brand new contest immediately, forever. _separate_after_contest
+        pushes them apart and a short self.contest_cooldown holds off
+        re-triggering, so the winner gets an actual window of play
+        before another tackle can start.
+        """
+        human_inputs, self._contest_direction_queue = self._contest_direction_queue, []
+        contest_minigame.update(self.active_contest, dt, human_inputs)
+        if self.active_contest.resolved:
+            contest, self.active_contest = self.active_contest, None
+            self.possession_state = possession.HELD_PLAYER
+            if contest.winner is not None:
+                self._give_possession(contest.winner)
+            self._separate_after_contest(contest.participants)
+            self.contest_cooldown = settings.CONTEST_COOLDOWN
+
+    def _separate_after_contest(self, participants):
+        """Push a resolved contest's two participants apart to just
+        beyond TACKLE_TRIGGER_RADIUS (see _update_contest) instead of
+        leaving them standing on top of each other."""
+        if len(participants) < 2:
+            return
+        a, b = participants[0], participants[1]
+        dx, dy = b.x - a.x, b.y - a.y
+        dist = math.hypot(dx, dy)
+        if dist < 0.01:
+            dx, dy, dist = 1.0, 0.0, 1.0
+        target_gap = settings.TACKLE_TRIGGER_RADIUS * 1.6
+        push = max(0.0, target_gap - dist) / 2
+        ux, uy = dx / dist, dy / dist
+        a.x, a.y = mechanics.clamp_to_oval(a.x - ux * push, a.y - uy * push)
+        b.x, b.y = mechanics.clamp_to_oval(b.x + ux * push, b.y + uy * push)
 
     def _reset_to_kickoff(self):
         """Return everyone to the current mode's opening layout after a score."""

@@ -25,6 +25,13 @@ formation, purely for a realistic on-field look; only the featured
 players (and, for RED, whichever couple end up closest to the carrier —
 see mechanics.update_defenders' MAX_CHASERS) ever do anything.
 
+An optional "config" dict overrides individual
+game_state.DEFAULT_MODE_CONFIG keys for possession/contest features —
+"starting_possession" ("human"/"ai"), "scoring_enabled", "contests_enabled",
+"ai_enabled" — see game_state.start_scenario. Omitted entirely on every
+scenario above; every scenario below that sets one is a purpose-built
+test fixture for that specific feature, not a "real" mission.
+
 `_padded`'s formation math intentionally duplicates
 game_state.FORMATION_LINES's shape rather than importing it — game_state
 already imports this module, so importing back would cycle. It's a pure
@@ -144,6 +151,44 @@ SCENARIOS = [
                           attack_positive=True),
         "red": _padded([(147, 55), (139, 46), (156, 62), (163, 49), (131, 58)],
                        attack_positive=False),
+    },
+    {
+        "name": "STRIP IT BACK",
+        "tagline": "THEY'VE GOT IT - TACKLE THEM AND TAKE IT BACK",
+        "situation": "OPPOSITION WON THE CONTEST - GET IN AND STRIP IT OFF THEM",
+        "quarter": "Q3",
+        "objective": "score",
+        "home_score_start": 0,
+        "away_score_start": 0,
+        "time_limit": 60.0,
+        "fail_on_turnover": False,
+        # AI possession/tackle-contest test fixture: RED starts with the
+        # ball (see game_state.DEFAULT_MODE_CONFIG's "starting_possession")
+        # so this scenario is specifically for verifying a human defender
+        # can close in on an AI carrier and win it back in a tackle
+        # contest — see ai_possession_tackle_prompt.md's testing checklist.
+        "config": {"starting_possession": "ai"},
+        "yellow": _padded([(110, 50), (120, 60), (100, 45)], attack_positive=True),
+        "red": _padded([(108, 52), (95, 40), (130, 65)], attack_positive=False),
+    },
+    {
+        "name": "OPEN FIELD DRILL",
+        "tagline": "NO CONTESTS, NO SCORING - JUST MOVE THE BALL",
+        "situation": "PURE BALL MOVEMENT DRILL - NO TACKLES, NO SCORE",
+        "quarter": "Q1",
+        "objective": "score",
+        "home_score_start": 0,
+        "away_score_start": 0,
+        "time_limit": 60.0,
+        "fail_on_turnover": False,
+        # Contests/scoring toggle test fixture: no tackle/50-50 contests
+        # ever trigger and no kick is ever evaluated as a shot on goal —
+        # confirms both toggles actually gate their feature off rather
+        # than just changing its odds. Unwinnable by design (scoring is
+        # off) — exit with ESC once satisfied, or let the clock run out.
+        "config": {"contests_enabled": False, "scoring_enabled": False},
+        "yellow": _padded([(90, 50), (110, 45), (130, 60)], attack_positive=True),
+        "red": _padded([(100, 55), (120, 40), (140, 65)], attack_positive=False),
     },
 ]
 

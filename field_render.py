@@ -224,6 +224,67 @@ def _render_hud(display, gs):
         display.blit(text, (rect.x + 16, rect.y + 9))
 
 
+# ── Tackle / 50-50 contest overlay ───────────────────────────────────
+
+_CONTEST_ARROW_POINTS = {
+    "UP":    lambda cx, cy, s: [(cx, cy - s), (cx - s, cy + s * 0.6), (cx + s, cy + s * 0.6)],
+    "DOWN":  lambda cx, cy, s: [(cx, cy + s), (cx - s, cy - s * 0.6), (cx + s, cy - s * 0.6)],
+    "LEFT":  lambda cx, cy, s: [(cx - s, cy), (cx + s * 0.6, cy - s), (cx + s * 0.6, cy + s)],
+    "RIGHT": lambda cx, cy, s: [(cx + s, cy), (cx - s * 0.6, cy - s), (cx - s * 0.6, cy + s)],
+}
+
+
+def _render_contest(display, gs):
+    """Tackle / 50-50 reaction minigame: a row of directional prompt
+    slots for the human's side of the race, highlighting their progress
+    and flashing a slot on a miss. The AI side has no controllable
+    input to give slot-by-slot feedback on, so its progress is just a
+    small "AI n/total" readout below the row — only whether it finishes
+    the whole combo (ending the contest) actually matters for it.
+    """
+    contest = gs.active_contest
+    cream = pygame.Color(settings.CREAM)
+    charcoal = pygame.Color(settings.UI_CHARCOAL)
+    ink = pygame.Color(settings.INK)
+    gold = pygame.Color(settings.YELLOW)
+    accent = pygame.Color(settings.ACCENT_RED)
+
+    slot, gap = 44, 12
+    n = len(contest.prompts)
+    total_w = n * slot + (n - 1) * gap
+    start_x = settings.WINDOW_W // 2 - total_w // 2
+    top = 100
+
+    human = contest.human
+    progress = contest.progress.get(id(human), 0) if human is not None else 0
+    flash = contest.flash.get(id(human), 0.0) if human is not None else 0.0
+
+    for i, direction in enumerate(contest.prompts):
+        rect = pygame.Rect(start_x + i * (slot + gap), top, slot, slot)
+        if i < progress:
+            fill, glyph = gold, ink
+        elif i == progress and flash > 0.0:
+            fill, glyph = accent, cream
+        elif i == progress:
+            fill, glyph = cream, ink
+        else:
+            fill, glyph = charcoal, cream
+        pygame.draw.rect(display, fill, rect, border_radius=6)
+        pygame.draw.rect(display, ink, rect, 2, border_radius=6)
+        pygame.draw.polygon(display, glyph,
+                            _CONTEST_ARROW_POINTS[direction](*rect.center, slot * 0.22))
+
+    label = "TACKLE!" if contest.kind == "tackle" else "50/50 BALL!"
+    title = hero_render._text("s", label, cream)
+    display.blit(title, (settings.WINDOW_W // 2 - title.get_width() // 2, top - 22))
+
+    ai_progress = max((contest.progress.get(id(a), 0) for a in contest.ai_participants),
+                      default=0)
+    ai_label = hero_render._text("s", f"AI {ai_progress}/{n}", pygame.Color("#b3ac97"))
+    display.blit(ai_label, (settings.WINDOW_W // 2 - ai_label.get_width() // 2,
+                            top + slot + 8))
+
+
 # ── Master compose ──────────────────────────────────────────────────
 
 def render(display, gs):
@@ -248,6 +309,9 @@ def render(display, gs):
     _render_hud(display, gs)
     display.blit(overlays._build_vignette(), (0, 0))
     overlays._render_flash(display, gs)
+
+    if gs.active_contest is not None:
+        _render_contest(display, gs)
 
     if gs.phase == PHASE_END:
         overlays._render_end(display, gs)

@@ -129,9 +129,32 @@ CONTEST_RADIUS       = 10.0  # RED player this close to a kick target contests
 MARK_RADIUS          = 12.0  # teammate this close to target can take the mark
 
 # ── Turnover / reset pacing ─────────────────────────────────────────
-TURNOVER_RESET_DELAY = 1.5   # seconds RED "holds" the ball before reset
 FLASH_DURATION       = 0.5   # seconds a score flash stays on screen
 BOUNCE_TICK_DURATION = 0.4   # seconds the bounce tick mark is visible
+
+# ── AI possession / tackle contest (see possession.py, ai_control.py,
+#    contest_minigame.py) ────────────────────────────────────────────
+# Placeholder-only tuning for this pass — no player attributes/tendencies
+# feed into any of these yet (see each HOOK comment at the call site).
+AI_HOLD_TIMEOUT = 3.0        # seconds an AI carrier runs before auto-kicking
+                              # HOOK: future tendency/attribute-driven timing
+TACKLE_TRIGGER_RADIUS = 4.5  # defender this close to the carrier starts a tackle contest
+                              # (just past DEFENDER_MIN_DIST's arm's-length stop point)
+                              # HOOK: future positioning/timing/attributes narrow or widen this
+CONTEST_COOLDOWN = 1.2       # seconds after a contest resolves before another can trigger
+                              # for the same pairing (see GameState._separate_after_contest —
+                              # without this, a resolved tackle's still-adjacent participants
+                              # would restart another contest on the very next eligible frame)
+
+# Tackle/50-50 reaction minigame tuning — one place to balance, see
+# contest_minigame.py. Miss policy is deliberately configurable rather
+# than hardcoded (see contest_minigame._miss).
+CONTEST_PROMPT_COUNT = 3
+CONTEST_AI_REACTION_RANGE = (0.35, 0.55)  # seconds per prompt, placeholder
+                                            # HOOK: future attribute-driven AI reaction speed
+CONTEST_INPUT_WINDOW = 1.4        # seconds allowed per prompt before it times out
+CONTEST_MISS_POLICY = "reset_combo"   # "reset_combo" | "time_penalty" | "instant_loss"
+CONTEST_MISS_TIME_PENALTY = 0.4
 
 # ── AFL Hero mode: camera (field-level diorama view) ────────────────
 HERO_CAM_BACK   = 46.0   # camera ground distance behind the focus point
