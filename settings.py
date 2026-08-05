@@ -86,6 +86,18 @@ FULL_GAME_PLAYER_SPEED = 19.0
 HANDBALL_RANGE  = 34.0    # max distance to a teammate for a handball
 KICK_MAX_RANGE  = 88.0    # beyond this a kick can't be aimed
 BALL_FLIGHT_SPEED = 95.0  # logical units per second while ball is airborne
+
+# Cosmetic ground-bounce played out at the landing spot right after a
+# flight arrives (see entities.Ball.start_bounce/advance_bounce) — visual
+# only, height offset alone, never touches the ball's actual (x, y), so
+# every outcome resolution keeps firing at the exact same moment it
+# always has (see GameState._apply_pending_outcome). Just makes a kick
+# read as an actual footy hitting the turf instead of stopping dead in
+# mid-air the instant it "arrives".
+BALL_BOUNCE_HOPS = 2            # diminishing hops before it settles flat
+BALL_BOUNCE_MAX_HEIGHT = 3.0    # world units, first hop's peak height cap
+BALL_BOUNCE_HOP_DURATION = 0.22 # seconds for one hop's up-and-down arc
+BALL_BOUNCE_DECAY = 0.45        # each successive hop's height/duration multiplier
 # Display pixels/second the kick-aim cursor moves under a controller's
 # right stick (see game_state.GameState.update / controller.right_stick).
 # Only used while a controller is actively pushing that stick — mouse
@@ -151,7 +163,31 @@ BOUNCE_TICK_DURATION = 0.4   # seconds the bounce tick mark is visible
 # Placeholder-only tuning for this pass — no player attributes/tendencies
 # feed into any of these yet (see each HOOK comment at the call site).
 AI_HOLD_TIMEOUT = 3.0        # seconds an AI carrier runs before auto-kicking
+                              # (only forces a kick if it hasn't already taken
+                              # a shot on reaching scoring range — see
+                              # ai_control.decide_next_action)
                               # HOOK: future tendency/attribute-driven timing
+
+# The AI carrier used to run dead-straight at the goal center for the
+# full AI_HOLD_TIMEOUT and then punt at goal regardless of range — from
+# a typical kickoff spot that's still well outside SCORING_ARC_RADIUS,
+# so it read as "always beelines to goal" and the kick was never
+# actually a scoring attempt (mechanics.is_scoring_attempt requires
+# being inside the arc first), just a low-percentage contested field
+# kick aimed at the goal mouth. These fix that without building out a
+# real decision tree (still explicitly future work — see
+# ai_control.decide_next_action's HOOK comment):
+AI_RUN_WOBBLE_DEGREES = 22.0   # the AI's run-at-goal heading gets a fresh
+                                 # random offset within +/- this many degrees
+                                 # every AI_WOBBLE_INTERVAL seconds, so a carry
+                                 # reads as running the ball into space rather
+                                 # than a razor-straight rail every time
+AI_WOBBLE_INTERVAL = 0.8       # seconds between re-rolling that heading offset
+AI_SHOT_AIM_SPREAD_DEGREES = 18.0  # once actually taking a shot on goal, the
+                                     # AI aims within +/- this many degrees of
+                                     # dead-straight instead of always dead
+                                     # center — varies shot difficulty/outcome
+                                     # instead of every shot being identical
 TACKLE_TRIGGER_RADIUS = 3.5  # defender this close to the carrier starts a tackle contest —
                               # deliberately inside DEFENDER_MIN_DIST (7.0) now, so a defender
                               # holding at their normal arm's-length stop point does NOT sit

@@ -206,6 +206,19 @@ def resolve_contest(target_point, nearby_players):
     return random.choices(nearby_players, weights=weights, k=1)[0]
 
 
+def rotate_vector(dx, dy, angle_deg):
+    """Rotate a (dx, dy) vector by angle_deg (positive = clockwise in this
+    project's y-down world, matching every other angle convention used
+    here — see wind_angle_effect/aim_ray_point). Used by ai_control to
+    vary the AI's run heading and shot aim instead of always pointing
+    dead at goal (see settings.AI_RUN_WOBBLE_DEGREES /
+    AI_SHOT_AIM_SPREAD_DEGREES).
+    """
+    rad = math.radians(angle_deg)
+    cos_a, sin_a = math.cos(rad), math.sin(rad)
+    return (dx * cos_a - dy * sin_a, dx * sin_a + dy * cos_a)
+
+
 def resolve_tackle(held_duration):
     """Resolve a tackle instantly (no reaction minigame — see settings.py's
     "Tackle resolution" block for the full rule rationale).

@@ -53,9 +53,25 @@ def _entity_drawables(cam, gs):
         shadow = hero_render._soft_ellipse_shadow(max(4, int(w * 1.1)),
                                                   max(2, int(w * 0.4)))
         is_carrier = p.is_ball_carrier
+        # The human's currently-steered player while defending (see
+        # GameState.controlled_player) — only worth marking when it's
+        # NOT also the carrier, since the carrier already gets the
+        # overhead hover arrow above and doesn't need a second marker.
+        is_controlled = p is gs.controlled_player and not is_carrier
 
         def draw(display, sx=sx, sy=sy, sprite=sprite, shadow=shadow,
-                 w=w, h=h, bob=bob, is_carrier=is_carrier, k=k):
+                 w=w, h=h, bob=bob, is_carrier=is_carrier,
+                 is_controlled=is_controlled, k=k):
+            if is_controlled:                    # ground ring under the
+                                                  # human's controlled player
+                ring_w = max(6, int(w * 1.3))
+                ring_h = max(3, int(ring_w * 0.45))
+                pulse = 0.75 + 0.25 * abs(((pygame.time.get_ticks() % 900) / 900.0) * 2 - 1)
+                ring = pygame.Surface((ring_w, ring_h), pygame.SRCALPHA)
+                pygame.draw.ellipse(ring, (*pygame.Color(settings.YELLOW)[:3],
+                                           int(200 * pulse)),
+                                    ring.get_rect(), max(1, int(k * 0.8)))
+                display.blit(ring, (int(sx) - ring_w // 2, int(sy) - ring_h // 2))
             display.blit(shadow, (int(sx) - shadow.get_width() // 2,
                                   int(sy) - shadow.get_height() // 2))
             display.blit(sprite, (int(sx) - w // 2, int(sy) - h - bob))
@@ -66,14 +82,27 @@ def _entity_drawables(cam, gs):
                 pygame.draw.polygon(display, pygame.Color(settings.LINE),
                                     [(ax - s, ay - s), (ax + s, ay - s),
                                      (ax, ay)])
+            elif is_controlled:                  # small arrow overhead too,
+                                                  # distinct from the carrier's
+                ax, ay = int(sx), int(sy) - h - int(5 * k) - bob
+                s = max(2, int(1.6 * k))
+                pygame.draw.polygon(display, pygame.Color(settings.YELLOW),
+                                    [(ax - s, ay), (ax + s, ay), (ax, ay + s)])
 
         items.append((depth, draw))
 
-    # The ball, lifted by its flight arc when airborne.
+    # The ball, lifted by its flight arc when airborne, or by a short
+    # cosmetic ground-bounce right after a flight lands (see
+    # entities.Ball.start_bounce/advance_bounce) — the two never overlap
+    # (bouncing only ever starts once in_flight has just gone False), so
+    # a plain either/or is enough rather than summing them.
     ball = gs.ball
-    lift = (hero_render._flight_lift(ball.flight_progress,
-                                     ball.flight_distance)
-            if ball.in_flight else 0.0)
+    if ball.in_flight:
+        lift = hero_render._flight_lift(ball.flight_progress, ball.flight_distance)
+    elif ball.bouncing:
+        lift = ball.bounce_height
+    else:
+        lift = 0.0
     bx, bz = ball.x, ball.y
     if ball.possessed_by is not None:
         bx += 1.0

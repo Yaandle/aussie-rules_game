@@ -217,6 +217,12 @@ class GameState:
         self.possession_state = possession.HELD_PLAYER
         self.active_contest = None
         self.ai_hold_timer = 0.0
+        # AI run-heading variation (see ai_control.decide_next_action /
+        # settings.AI_RUN_WOBBLE_DEGREES) — a fresh random offset picked
+        # every AI_WOBBLE_INTERVAL seconds so an AI carry doesn't run a
+        # razor-straight line at goal every single possession.
+        self.ai_wobble_timer = 0.0
+        self.ai_wobble_angle = 0.0
         self.contest_cooldown = 0.0
         self._contest_direction_queue = []
         # Seconds the current carrier has held the ball — reset in
@@ -895,6 +901,7 @@ class GameState:
                 return
 
         self.ball.follow_carrier()
+        self.ball.advance_bounce(dt)
         was_in_flight = self.ball.in_flight
         pre_step_pos = self.ball.pos
         arrived = self.ball.advance_flight(dt)
@@ -1148,12 +1155,24 @@ class GameState:
             return
 
         if outcome["type"] == "possession":
+            # A mark or a caught handball: the ball never actually touches
+            # the ground, so no cosmetic bounce (see entities.Ball.
+            # start_bounce / give_to's reset) — it just goes straight to
+            # the new carrier's hands, same as always.
             self._give_possession(outcome["player"])
             if outcome.get("is_mark") and outcome.get("kick_distance", 0.0) > settings.MARK_STAND_MIN_DISTANCE:
                 self._start_standing_mark(outcome["player"])
 
         elif outcome["type"] == "turnover":
+            # A missed kick landing loose, then scooped up by the nearest
+            # opponent — the ball genuinely hit the turf first, so this
+            # gets the cosmetic bounce (played out at the landing spot;
+            # see entities.Ball.start_bounce — purely visual, doesn't
+            # delay _give_possession or any of this method's own timing).
+            landing_spot = self.ball.pos
             self._give_possession(outcome["player"])
+            self.ball.start_bounce(self.ball.flight_distance)
+            self.ball.x, self.ball.y = landing_spot
             self._show_message("TURNOVER")
             self._register_turnover()
 
@@ -1365,6 +1384,9 @@ class GameState:
             self._give_possession(nearest_yellow)
             return
         self.ball.x, self.ball.y = spot
+        self.ball.start_bounce(0.0)   # a short, low hop — the ball's already
+                                        # down, this just reads as it settling
+                                        # at the spot rather than a hard cut
         self._start_contest([nearest_yellow, nearest_red], "ruck")
 
     def _update_contest(self, dt):
