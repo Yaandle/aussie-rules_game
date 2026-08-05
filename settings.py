@@ -25,7 +25,6 @@ TREE        = "#66794e"   # canopy
 TREE_DARK   = "#546741"   # canopy shading
 TREE_LIGHT  = "#788c5c"   # canopy lit speckle
 WOOD        = "#6b5a40"   # trunks
-WOOD_DARK   = "#544733"   # trunk shading
 FENCE       = "#454738"   # dark rail fences and benches
 POST_RED    = "#c65449"   # red band at the base of each post
 ACCENT_RED  = "#c65449"   # scoreboard dot, warnings, countdown
@@ -87,6 +86,18 @@ FULL_GAME_PLAYER_SPEED = 19.0
 HANDBALL_RANGE  = 34.0    # max distance to a teammate for a handball
 KICK_MAX_RANGE  = 88.0    # beyond this a kick can't be aimed
 BALL_FLIGHT_SPEED = 95.0  # logical units per second while ball is airborne
+
+# Cosmetic ground-bounce played out at the landing spot right after a
+# flight arrives (see entities.Ball.start_bounce/advance_bounce) — visual
+# only, height offset alone, never touches the ball's actual (x, y), so
+# every outcome resolution keeps firing at the exact same moment it
+# always has (see GameState._apply_pending_outcome). Just makes a kick
+# read as an actual footy hitting the turf instead of stopping dead in
+# mid-air the instant it "arrives".
+BALL_BOUNCE_HOPS = 2            # diminishing hops before it settles flat
+BALL_BOUNCE_MAX_HEIGHT = 3.0    # world units, first hop's peak height cap
+BALL_BOUNCE_HOP_DURATION = 0.22 # seconds for one hop's up-and-down arc
+BALL_BOUNCE_DECAY = 0.45        # each successive hop's height/duration multiplier
 # Display pixels/second the kick-aim cursor moves under a controller's
 # right stick (see game_state.GameState.update / controller.right_stick).
 # Only used while a controller is actively pushing that stick — mouse
@@ -111,13 +122,27 @@ SLOWMO_FACTOR = 0.25      # time dilation while lining up a kick
 # ── Defender AI ─────────────────────────────────────────────────────
 DEFENDER_SPEED    = 9.0   # closing defenders converge at this speed
 CHASE_RADIUS      = 38.0  # defenders further than this stay home
-DEFENDER_MIN_DIST = 4.0   # they hold off at arm's length (no tackling yet)
+DEFENDER_MIN_DIST = 7.0   # they hold off at arm's length (no tackling yet) —
+                           # kept comfortably outside TACKLE_TRIGGER_RADIUS
+                           # (see below) so a defender's normal resting
+                           # distance doesn't itself sit inside tackle range;
+                           # bumped from 4.0, which left only a 0.5-unit gap
+                           # to TACKLE_TRIGGER_RADIUS (4.5) — practically no
+                           # buffer, so a contest fired almost as soon as a
+                           # defender arrived at all
 MAX_CHASERS       = 2     # how many defenders pressure at once
 
 # Off-ball shape (FULL GAME only — scenarios keep their original fully
 # static non-chasers, so hand-tuned puzzle moments don't drift).
 OFF_BALL_SPEED = 5.0   # well under DEFENDER_SPEED: repositioning, not chasing
 OFF_BALL_DRIFT = 0.30  # 0..1 lean from formation "home" spot toward the ball
+
+# Minimum gap kept between any two players' logical positions (see
+# mechanics.separate_players, called once per frame from GameState.update)
+# so one sprite can never fully hide another on screen. Deliberately well
+# under TACKLE_TRIGGER_RADIUS (3.5) so it never gets in the way of a
+# legitimate tackle contest actually triggering.
+PLAYER_MIN_SEPARATION = 2.2
 
 # ── Probability model ───────────────────────────────────────────────
 PRESSURE_RADIUS      = 20.0  # opponent within this range applies pressure
@@ -130,9 +155,122 @@ CONTEST_RADIUS       = 10.0  # RED player this close to a kick target contests
 MARK_RADIUS          = 12.0  # teammate this close to target can take the mark
 
 # ── Turnover / reset pacing ─────────────────────────────────────────
-TURNOVER_RESET_DELAY = 1.5   # seconds RED "holds" the ball before reset
 FLASH_DURATION       = 0.5   # seconds a score flash stays on screen
 BOUNCE_TICK_DURATION = 0.4   # seconds the bounce tick mark is visible
+
+# ── AI possession / tackle contest (see possession.py, ai_control.py,
+#    contest_minigame.py) ────────────────────────────────────────────
+# Placeholder-only tuning for this pass — no player attributes/tendencies
+# feed into any of these yet (see each HOOK comment at the call site).
+AI_HOLD_TIMEOUT = 3.0        # seconds an AI carrier runs before auto-kicking
+                              # (only forces a kick if it hasn't already taken
+                              # a shot on reaching scoring range — see
+                              # ai_control.decide_next_action)
+                              # HOOK: future tendency/attribute-driven timing
+
+# The AI carrier used to run dead-straight at the goal center for the
+# full AI_HOLD_TIMEOUT and then punt at goal regardless of range — from
+# a typical kickoff spot that's still well outside SCORING_ARC_RADIUS,
+# so it read as "always beelines to goal" and the kick was never
+# actually a scoring attempt (mechanics.is_scoring_attempt requires
+# being inside the arc first), just a low-percentage contested field
+# kick aimed at the goal mouth. These fix that without building out a
+# real decision tree (still explicitly future work — see
+# ai_control.decide_next_action's HOOK comment):
+AI_RUN_WOBBLE_DEGREES = 22.0   # the AI's run-at-goal heading gets a fresh
+                                 # random offset within +/- this many degrees
+                                 # every AI_WOBBLE_INTERVAL seconds, so a carry
+                                 # reads as running the ball into space rather
+                                 # than a razor-straight rail every time
+AI_WOBBLE_INTERVAL = 0.8       # seconds between re-rolling that heading offset
+AI_SHOT_AIM_SPREAD_DEGREES = 18.0  # once actually taking a shot on goal, the
+                                     # AI aims within +/- this many degrees of
+                                     # dead-straight instead of always dead
+                                     # center — varies shot difficulty/outcome
+                                     # instead of every shot being identical
+TACKLE_TRIGGER_RADIUS = 3.5  # defender this close to the carrier starts a tackle contest —
+                              # deliberately inside DEFENDER_MIN_DIST (7.0) now, so a defender
+                              # holding at their normal arm's-length stop point does NOT sit
+                              # inside tackle range by default; a tackle only fires when the
+                              # carrier is actively moved toward the defender (or vice versa)
+                              # past that arm's-length gap, not as a matter of course
+                              # HOOK: future positioning/timing/attributes narrow or widen this
+CONTEST_COOLDOWN = 1.2       # seconds after a contest resolves before another can trigger
+                              # for the same pairing (see GameState._separate_after_contest —
+                              # without this, a resolved tackle's still-adjacent participants
+                              # would restart another contest on the very next eligible frame)
+
+# ── Mark / stand-the-mark (see GameState.standing_mark, possession.py) ──
+MARK_STAND_MIN_DISTANCE = 15.0  # a kick landing as a mark past this distance
+                                  # triggers stand-the-mark; short marks don't
+MARK_HOLD_DURATION = 5.0        # seconds the marker is tackle-immune and the
+                                  # nearest defender is frozen at the mark
+
+# Loose-ball/50-50 reaction minigame tuning — one place to balance, see
+# contest_minigame.py. Miss policy is deliberately configurable rather
+# than hardcoded (see contest_minigame._miss). Tackles no longer use this
+# minigame (see TACKLE_* below / mechanics.resolve_tackle) — this block
+# now only drives a loose ball landing in a pack (kind="loose_ball", see
+# GameState._apply_pending_outcome's "contest" branch) and a ruck contest
+# at a boundary ball-up (see possession.start_ruck_contest), both of
+# which still resolve via this same reaction race.
+CONTEST_PROMPT_COUNT = 3
+CONTEST_AI_REACTION_RANGE = (0.35, 0.55)  # seconds per prompt, placeholder
+                                            # HOOK: future attribute-driven AI reaction speed
+CONTEST_INPUT_WINDOW = 1.4        # seconds allowed per prompt before it times out
+CONTEST_MISS_POLICY = "reset_combo"   # "reset_combo" | "time_penalty" | "instant_loss"
+CONTEST_MISS_TIME_PENALTY = 0.4
+
+# ── Tackle resolution: holding the ball / prior opportunity ──────────
+# A tackle (possession.find_tackle_trigger) no longer opens the reaction
+# minigame — it resolves instantly (see mechanics.resolve_tackle),
+# because the outcome now depends on match-rule state (how long the
+# carrier has held the ball) rather than a race either player can be
+# equally good at regardless of the football situation.
+#
+# GameState.possession_held_timer counts seconds since the current
+# carrier gained the ball (reset in _give_possession, incremented once
+# per frame in update()). A tackle before PRIOR_OPPORTUNITY_GRACE has
+# elapsed is "no prior opportunity" — the carrier hasn't had a real
+# chance to dispose yet, so it's a neutral ball-up, no penalty either
+# way. A tackle after that window is judged as holding the ball: an
+# almost-random break-tackle roll (TACKLE_BREAK_CHANCE) decides whether
+# the carrier shrugs the tackle off (keeps the ball) or is pinged for
+# holding it (free kick to the tackler).
+#
+# HOOK: TACKLE_BREAK_CHANCE is a flat placeholder — a future
+# strength/agility/tackling attribute system replaces the single
+# probability with something derived per-player, the same way every
+# other placeholder in this file (AI_HOLD_TIMEOUT, CONTEST_AI_REACTION_
+# RANGE) already flags where attributes eventually plug in.
+PRIOR_OPPORTUNITY_GRACE = 0.5   # seconds after gaining the ball a tackle is
+                                  # always a neutral ball-up, never holding-the-ball
+TACKLE_BREAK_CHANCE = 0.45      # odds the carrier breaks a past-grace tackle
+                                  # and keeps the ball instead of holding it
+POST_TACKLE_COOLDOWN = 1.0      # seconds after ANY tackle resolution (broken or
+                                  # not) before that pairing can trigger another —
+                                  # reuses the same separation idea as
+                                  # CONTEST_COOLDOWN/_separate_after_contest so a
+                                  # broken tackle doesn't instantly re-trigger
+
+# ── Out of bounds ──────────────────────────────────────────────────────
+# Two distinct AFL rulings, both detected on the ball rather than on any
+# player (players are already clamped inside the oval — see Player.move —
+# so only the ball, in flight or resting after a missed kick, can
+# actually leave it):
+#   "out on the full"  — a kicked ball crosses the boundary line in the
+#                         air, before landing/being marked/contested.
+#                         Free kick to whichever team didn't kick it,
+#                         taken from where it crossed the line.
+#   "ball-up" (ruck)    — the ball comes down outside the oval (a grounded
+#                         miss that rolls/bounces out) rather than crossing
+#                         it on the full. Neutral: a boundary throw-in,
+#                         resolved as a loose_ball contest between the
+#                         nearest player of each team at that spot.
+OOB_BOUNDARY_INSET = 2.0   # matches the inset mechanics.clamp_to_oval/Player.move
+                             # already use for "inside the oval" — kept as one
+                             # named constant here so the OOB check reads the
+                             # exact same boundary every other clamp already does
 
 # ── AFL Hero mode: camera (field-level diorama view) ────────────────
 HERO_CAM_BACK   = 46.0   # camera ground distance behind the focus point

@@ -71,6 +71,19 @@ class Ball:
         self._flight_t = 0.0        # 0..1 progress along the flight path
         self._flight_duration = 0.0
         self.flight_distance = 0.0  # total path length (drives the arc height)
+        # Cosmetic ground-bounce, played out at the landing spot right
+        # after a flight arrives — see start_bounce/advance_bounce. Purely
+        # visual: it only ever drives bounce_height (read by field_render
+        # for an extra hop or two before the ball settles), never x/y, so
+        # nothing that resolves outcomes off the ball's actual position
+        # (GameState._apply_pending_outcome, the OOB checks, etc.) needs
+        # to know this exists or wait for it to finish.
+        self.bouncing = False
+        self.bounce_height = 0.0
+        self._bounce_hops_left = 0
+        self._bounce_t = 0.0
+        self._bounce_duration = 0.0
+        self._bounce_peak = 0.0
 
     @property
     def pos(self):
@@ -80,6 +93,8 @@ class Ball:
         """Attach the ball to a player and end any flight."""
         self.possessed_by = player
         self.in_flight = False
+        self.bouncing = False
+        self.bounce_height = 0.0
         self.x, self.y = player.x, player.y
 
     def start_flight(self, from_point, to_point, speed=None):
@@ -93,6 +108,8 @@ class Ball:
         """
         self.possessed_by = None
         self.in_flight = True
+        self.bouncing = False
+        self.bounce_height = 0.0
         self._flight_from = from_point
         self._flight_to = to_point
         self._flight_t = 0.0
@@ -102,7 +119,14 @@ class Ball:
         self.x, self.y = from_point
 
     def advance_flight(self, dt):
-        """Move the ball along its flight path. Returns True on arrival."""
+        """Move the ball along its flight path. Returns True on arrival.
+
+        Does NOT start the cosmetic ground-bounce itself — a clean mark
+        or a successful handball catch means the ball never actually hits
+        the turf, so the caller (GameState._apply_pending_outcome) decides
+        whether this particular arrival warrants one (see start_bounce)
+        once it knows what kind of outcome this flight resolved to.
+        """
         if not self.in_flight:
             return False
         self._flight_t += dt / self._flight_duration
@@ -117,12 +141,59 @@ class Ball:
         self.y = fy + (ty - fy) * t
         return False
 
+    def start_bounce(self, flight_distance):
+        """Begin a short, diminishing ground-bounce at the ball's current
+        (x, y) — called automatically once a flight arrives. Longer kicks
+        get a slightly higher first hop, same idea as hero_render's
+        _flight_lift scaling lift with distance, capped so a full-length
+        kick doesn't bounce unrealistically high.
+        """
+        self.bouncing = True
+        self._bounce_hops_left = settings.BALL_BOUNCE_HOPS
+        self._bounce_t = 0.0
+        self._bounce_peak = min(flight_distance / 10.0, settings.BALL_BOUNCE_MAX_HEIGHT)
+        self._bounce_duration = settings.BALL_BOUNCE_HOP_DURATION
+        self.bounce_height = 0.0
+
+    def advance_bounce(self, dt):
+        """Step the cosmetic bounce forward; each hop is progressively
+        lower and quicker than the last until it settles flat."""
+        if not self.bouncing:
+            return
+        self._bounce_t += dt
+        t = min(self._bounce_t / self._bounce_duration, 1.0)
+        # A single hop's height follows the same sine arc real flight
+        # uses (see hero_render._flight_lift) — up and back down to zero.
+        self.bounce_height = math.sin(math.pi * t) * self._bounce_peak
+        if t >= 1.0:
+            self._bounce_hops_left -= 1
+            if self._bounce_hops_left <= 0:
+                self.bouncing = False
+                self.bounce_height = 0.0
+                return
+            # Each successive hop is lower and a touch quicker, same
+            # "settling down" shape a real ball loses energy in.
+            self._bounce_peak *= settings.BALL_BOUNCE_DECAY
+            self._bounce_duration *= settings.BALL_BOUNCE_DECAY
+            self._bounce_t = 0.0
+
     @property
     def flight_progress(self):
         """0..1 progress along the current flight (1.0 when landed/held)."""
         return min(self._flight_t, 1.0)
 
     def follow_carrier(self):
-        """Keep the ball glued to its carrier while possessed."""
-        if self.possessed_by is not None:
+        """Keep the ball glued to its carrier while possessed.
+
+        Deliberately skipped while a cosmetic ground-bounce is still
+        playing (see start_bounce/advance_bounce): a turnover's bounce
+        happens at the landing spot, which can be well away from
+        whichever player picks the loose ball up (there's no "walk over
+        and gather it" animation in this engine — possession changes
+        hands instantly) — snapping straight to them would cut the
+        bounce off after a single frame instead of letting it play out
+        where the ball actually landed. GameState.update() ends the
+        bounce and lets this resume once advance_bounce finishes.
+        """
+        if self.possessed_by is not None and not self.bouncing:
             self.x, self.y = self.possessed_by.x, self.possessed_by.y

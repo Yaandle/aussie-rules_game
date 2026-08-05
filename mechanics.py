@@ -80,6 +80,40 @@ def update_off_ball(players, home_positions, focus_pos, dt):
         _step_toward(p, (tx, ty), settings.OFF_BALL_SPEED, dt, stop_at=1.0)
 
 
+def separate_players(players, min_dist):
+    """Push any two players standing closer than `min_dist` apart to
+    exactly that distance, both clamped back inside the oval.
+
+    Nothing in this project's movement gives players a physical body —
+    Player.move, update_defenders, and update_off_ball all clamp only
+    against the field boundary, never against each other — so two
+    players (most visibly an attacker and the defender marking them)
+    can end up standing on almost the same spot. Visually that reads as
+    one sprite completely hiding the other, with no gap or outline to
+    show anyone's underneath, until their paths diverge again.
+
+    A simple O(n^2) pairwise resolve, run once per frame after movement
+    (see GameState.update) — this roster tops out at 32 players, so the
+    cost is negligible, and a single pass is enough since these are soft
+    pushes rather than a rigid-body solver: any residual overlap left by
+    one pair's push (rare, since MAX_CHASERS keeps close-contact groups
+    small) resolves further on the next frame instead of needing an
+    iterative solve.
+    """
+    for i, a in enumerate(players):
+        for b in players[i + 1:]:
+            dx, dy = b.x - a.x, b.y - a.y
+            dist = math.hypot(dx, dy)
+            if dist >= min_dist:
+                continue
+            if dist < 0.01:
+                dx, dy, dist = 1.0, 0.0, 1.0
+            push = (min_dist - dist) / 2
+            ux, uy = dx / dist, dy / dist
+            a.x, a.y = clamp_to_oval(a.x - ux * push, a.y - uy * push)
+            b.x, b.y = clamp_to_oval(b.x + ux * push, b.y + uy * push)
+
+
 def calculate_pressure(ball_carrier, opponents):
     """Pressure on the carrier, 0.0 (free) to 1.0 (smothered).
 
@@ -140,8 +174,12 @@ def resolve_kick(carrier, target_point, opponents, teammates, pressure):
                                    if t.distance_to(target_point) <= settings.CONTEST_RADIUS
                                    and t is not carrier]
         winner = resolve_contest(target_point, candidates)
-        result = "contest"
-        return {"result": result, "winner": winner}
+        # "candidates" lets a caller run this as a live reaction contest
+        # (contest_minigame.py) between the two closest players instead
+        # of just taking "winner", the instant proximity-weighted roll —
+        # "winner" stays here too so contests-disabled callers keep
+        # today's exact behavior with no extra branching.
+        return {"result": "contest", "winner": winner, "candidates": candidates}
 
     if random.random() < kick_accuracy(pressure, distance):
         receivers = [t for t in teammates
@@ -168,6 +206,47 @@ def resolve_contest(target_point, nearby_players):
     return random.choices(nearby_players, weights=weights, k=1)[0]
 
 
+def rotate_vector(dx, dy, angle_deg):
+    """Rotate a (dx, dy) vector by angle_deg (positive = clockwise in this
+    project's y-down world, matching every other angle convention used
+    here — see wind_angle_effect/aim_ray_point). Used by ai_control to
+    vary the AI's run heading and shot aim instead of always pointing
+    dead at goal (see settings.AI_RUN_WOBBLE_DEGREES /
+    AI_SHOT_AIM_SPREAD_DEGREES).
+    """
+    rad = math.radians(angle_deg)
+    cos_a, sin_a = math.cos(rad), math.sin(rad)
+    return (dx * cos_a - dy * sin_a, dx * sin_a + dy * cos_a)
+
+
+def resolve_tackle(held_duration):
+    """Resolve a tackle instantly (no reaction minigame — see settings.py's
+    "Tackle resolution" block for the full rule rationale).
+
+    Returns one of:
+      "no_prior_opportunity" — held_duration hasn't reached
+                                PRIOR_OPPORTUNITY_GRACE yet: the carrier
+                                hasn't had a real chance to dispose, so
+                                this is a neutral ball-up, nobody's fault.
+      "broken"                — past the grace window, but the carrier
+                                 won the (currently almost-random)
+                                 break-tackle roll and keeps the ball.
+      "holding_the_ball"       — past the grace window and lost the roll:
+                                 free kick to the tackler.
+
+    HOOK: TACKLE_BREAK_CHANCE is a flat placeholder probability — a
+    future strength/agility/tackling-attribute system would compute this
+    per matchup (tackler vs. carrier) instead of one constant for
+    everyone, the same way AI_HOLD_TIMEOUT and CONTEST_AI_REACTION_RANGE
+    already flag as future attribute hooks elsewhere in this file.
+    """
+    if held_duration < settings.PRIOR_OPPORTUNITY_GRACE:
+        return "no_prior_opportunity"
+    if random.random() < settings.TACKLE_BREAK_CHANCE:
+        return "broken"
+    return "holding_the_ball"
+
+
 # ── AFL Hero mode helpers (pure; used by hero_state) ────────────────
 # Hero outcomes resolve interactively (interception mid-flight, marks at
 # landing) rather than via the top-down _pending_outcome pattern, because
@@ -175,14 +254,59 @@ def resolve_contest(target_point, nearby_players):
 
 def clamp_to_oval(x, y):
     """Pull a point back inside the playing oval if it has strayed out."""
-    rx = settings.FIELD_W / 2 - 2
-    ry = settings.FIELD_H / 2 - 2
+    rx = settings.FIELD_W / 2 - settings.OOB_BOUNDARY_INSET
+    ry = settings.FIELD_H / 2 - settings.OOB_BOUNDARY_INSET
     ex = (x - settings.FIELD_CX) / rx
     ey = (y - settings.FIELD_CY) / ry
     d = math.sqrt(ex * ex + ey * ey)
     if d <= 1.0:
         return (x, y)
     return (settings.FIELD_CX + ex / d * rx, settings.FIELD_CY + ey / d * ry)
+
+
+def is_out_of_bounds(x, y):
+    """True once (x, y) has crossed the same oval boundary clamp_to_oval
+    clamps back inside — the one shared "is this point on the field"
+    test for both out-on-the-full detection (Ball still in flight) and
+    the ball-up case (a missed kick's landing point sits outside).
+    """
+    rx = settings.FIELD_W / 2 - settings.OOB_BOUNDARY_INSET
+    ry = settings.FIELD_H / 2 - settings.OOB_BOUNDARY_INSET
+    ex = (x - settings.FIELD_CX) / rx
+    ey = (y - settings.FIELD_CY) / ry
+    return ex * ex + ey * ey > 1.0
+
+
+def boundary_crossing_point(from_point, to_point):
+    """Where the straight segment from_point -> to_point first crosses
+    the oval boundary, or to_point itself if it never does.
+
+    Used for "out on the full": once a frame's Ball.advance_flight step
+    has landed outside the oval, this walks back along that single
+    frame's short travel segment to find the actual crossing point —
+    close enough over one frame's distance that a binary search would be
+    overkill (BALL_FLIGHT_SPEED's fastest single-frame step is a small
+    fraction of the oval's radius), so a fixed number of bisection steps
+    is plenty accurate for where the free kick gets taken from.
+    """
+    if not is_out_of_bounds(*from_point):
+        lo, hi = 0.0, 1.0   # from_point is in bounds, to_point is not
+    else:
+        return from_point   # already out at the start of this segment —
+                             # nothing to bisect, take the earlier point
+    fx, fy = from_point
+    tx, ty = to_point
+    for _ in range(12):     # 2**-12 precision along the segment — plenty
+        mid = (lo + hi) / 2
+        mx = fx + (tx - fx) * mid
+        my = fy + (ty - fy) * mid
+        if is_out_of_bounds(mx, my):
+            hi = mid
+        else:
+            lo = mid
+    mx = fx + (tx - fx) * hi
+    my = fy + (ty - fy) * hi
+    return (mx, my)
 
 
 def bezier_point(p0, ctrl, p1, t):
@@ -350,14 +474,19 @@ def is_scoring_attempt(kick_origin, target_point, goal_center):
     return angle <= settings.SCORING_MAX_ANGLE
 
 
-def resolve_scoring_attempt(kick_origin, target_point):
+def resolve_scoring_attempt(kick_origin, target_point, goal_center=settings.GOAL_RIGHT):
     """Resolve a shot on goal into "goal", "behind", or "miss".
 
     Longer and more angled shots are less likely to split the middle.
     Distance and angle each erode goal probability; a wide draw becomes
     a behind, and the worst rolls miss entirely.
+
+    `goal_center` defaults to GOAL_RIGHT (every caller before this one
+    only ever shot that way — see AFL Hero's hero_state.py, which still
+    doesn't pass one); game_state.py passes GOAL_LEFT for an AI carrier
+    attacking the other way, so both teams' shots resolve symmetrically.
     """
-    goal = settings.GOAL_RIGHT
+    goal = goal_center
     distance = _dist(kick_origin, goal)
     dist_factor = min(distance / settings.SCORING_ARC_RADIUS, 1.0)
 

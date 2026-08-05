@@ -53,9 +53,25 @@ def _entity_drawables(cam, gs):
         shadow = hero_render._soft_ellipse_shadow(max(4, int(w * 1.1)),
                                                   max(2, int(w * 0.4)))
         is_carrier = p.is_ball_carrier
+        # The human's currently-steered player while defending (see
+        # GameState.controlled_player) — only worth marking when it's
+        # NOT also the carrier, since the carrier already gets the
+        # overhead hover arrow above and doesn't need a second marker.
+        is_controlled = p is gs.controlled_player and not is_carrier
 
         def draw(display, sx=sx, sy=sy, sprite=sprite, shadow=shadow,
-                 w=w, h=h, bob=bob, is_carrier=is_carrier, k=k):
+                 w=w, h=h, bob=bob, is_carrier=is_carrier,
+                 is_controlled=is_controlled, k=k):
+            if is_controlled:                    # ground ring under the
+                                                  # human's controlled player
+                ring_w = max(6, int(w * 1.3))
+                ring_h = max(3, int(ring_w * 0.45))
+                pulse = 0.75 + 0.25 * abs(((pygame.time.get_ticks() % 900) / 900.0) * 2 - 1)
+                ring = pygame.Surface((ring_w, ring_h), pygame.SRCALPHA)
+                pygame.draw.ellipse(ring, (*pygame.Color(settings.YELLOW)[:3],
+                                           int(200 * pulse)),
+                                    ring.get_rect(), max(1, int(k * 0.8)))
+                display.blit(ring, (int(sx) - ring_w // 2, int(sy) - ring_h // 2))
             display.blit(shadow, (int(sx) - shadow.get_width() // 2,
                                   int(sy) - shadow.get_height() // 2))
             display.blit(sprite, (int(sx) - w // 2, int(sy) - h - bob))
@@ -66,14 +82,27 @@ def _entity_drawables(cam, gs):
                 pygame.draw.polygon(display, pygame.Color(settings.LINE),
                                     [(ax - s, ay - s), (ax + s, ay - s),
                                      (ax, ay)])
+            elif is_controlled:                  # small arrow overhead too,
+                                                  # distinct from the carrier's
+                ax, ay = int(sx), int(sy) - h - int(5 * k) - bob
+                s = max(2, int(1.6 * k))
+                pygame.draw.polygon(display, pygame.Color(settings.YELLOW),
+                                    [(ax - s, ay), (ax + s, ay), (ax, ay + s)])
 
         items.append((depth, draw))
 
-    # The ball, lifted by its flight arc when airborne.
+    # The ball, lifted by its flight arc when airborne, or by a short
+    # cosmetic ground-bounce right after a flight lands (see
+    # entities.Ball.start_bounce/advance_bounce) — the two never overlap
+    # (bouncing only ever starts once in_flight has just gone False), so
+    # a plain either/or is enough rather than summing them.
     ball = gs.ball
-    lift = (hero_render._flight_lift(ball.flight_progress,
-                                     ball.flight_distance)
-            if ball.in_flight else 0.0)
+    if ball.in_flight:
+        lift = hero_render._flight_lift(ball.flight_progress, ball.flight_distance)
+    elif ball.bouncing:
+        lift = ball.bounce_height
+    else:
+        lift = 0.0
     bx, bz = ball.x, ball.y
     if ball.possessed_by is not None:
         bx += 1.0
@@ -224,6 +253,74 @@ def _render_hud(display, gs):
         display.blit(text, (rect.x + 16, rect.y + 9))
 
 
+# ── Tackle / 50-50 contest overlay ───────────────────────────────────
+
+_CONTEST_ARROW_POINTS = {
+    "UP":    lambda cx, cy, s: [(cx, cy - s), (cx - s, cy + s * 0.6), (cx + s, cy + s * 0.6)],
+    "DOWN":  lambda cx, cy, s: [(cx, cy + s), (cx - s, cy - s * 0.6), (cx + s, cy - s * 0.6)],
+    "LEFT":  lambda cx, cy, s: [(cx - s, cy), (cx + s * 0.6, cy - s), (cx + s * 0.6, cy + s)],
+    "RIGHT": lambda cx, cy, s: [(cx + s, cy), (cx - s * 0.6, cy - s), (cx - s * 0.6, cy + s)],
+}
+
+
+def _render_contest(display, gs):
+    """Tackle / 50-50 reaction minigame: a row of directional prompt
+    slots for the human's side of the race, highlighting their progress
+    and flashing a slot on a miss. The AI side has no controllable
+    input to give slot-by-slot feedback on, so its progress is just a
+    small "AI n/total" readout below the row — only whether it finishes
+    the whole combo (ending the contest) actually matters for it.
+    """
+    contest = gs.active_contest
+    cream = pygame.Color(settings.CREAM)
+    charcoal = pygame.Color(settings.UI_CHARCOAL)
+    ink = pygame.Color(settings.INK)
+    gold = pygame.Color(settings.YELLOW)
+    accent = pygame.Color(settings.ACCENT_RED)
+
+    slot, gap = 44, 12
+    n = len(contest.prompts)
+    total_w = n * slot + (n - 1) * gap
+    start_x = settings.WINDOW_W // 2 - total_w // 2
+    top = 100
+
+    human = contest.human
+    progress = contest.progress.get(id(human), 0) if human is not None else 0
+    flash = contest.flash.get(id(human), 0.0) if human is not None else 0.0
+
+    for i, direction in enumerate(contest.prompts):
+        rect = pygame.Rect(start_x + i * (slot + gap), top, slot, slot)
+        if i < progress:
+            fill, glyph = gold, ink
+        elif i == progress and flash > 0.0:
+            fill, glyph = accent, cream
+        elif i == progress:
+            fill, glyph = cream, ink
+        else:
+            fill, glyph = charcoal, cream
+        pygame.draw.rect(display, fill, rect, border_radius=6)
+        pygame.draw.rect(display, ink, rect, 2, border_radius=6)
+        pygame.draw.polygon(display, glyph,
+                            _CONTEST_ARROW_POINTS[direction](*rect.center, slot * 0.22))
+
+    if contest.kind == "ruck":
+        label = "BALL UP!"
+    elif contest.kind == "tackle":
+        label = "TACKLE!"   # dead code today (tackles resolve instantly —
+                              # see GameState._resolve_tackle_now), kept as
+                              # a harmless fallback rather than deleted
+    else:
+        label = "50/50 BALL!"
+    title = hero_render._text("s", label, cream)
+    display.blit(title, (settings.WINDOW_W // 2 - title.get_width() // 2, top - 22))
+
+    ai_progress = max((contest.progress.get(id(a), 0) for a in contest.ai_participants),
+                      default=0)
+    ai_label = hero_render._text("s", f"AI {ai_progress}/{n}", pygame.Color("#b3ac97"))
+    display.blit(ai_label, (settings.WINDOW_W // 2 - ai_label.get_width() // 2,
+                            top + slot + 8))
+
+
 # ── Master compose ──────────────────────────────────────────────────
 
 def render(display, gs):
@@ -248,6 +345,9 @@ def render(display, gs):
     _render_hud(display, gs)
     display.blit(overlays._build_vignette(), (0, 0))
     overlays._render_flash(display, gs)
+
+    if gs.active_contest is not None:
+        _render_contest(display, gs)
 
     if gs.phase == PHASE_END:
         overlays._render_end(display, gs)

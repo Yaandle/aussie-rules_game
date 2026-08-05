@@ -478,10 +478,6 @@ def _render_controls(display):
     mapping) get one appended, live. RETRY has no controller binding at
     all, so it's left alone too — nothing here would be accurate."""
     font, font_small, font_big = render._fonts()
-    pad = controller.is_connected()
-
-    def key_label(keys, xbox):
-        return f"{keys} · {xbox}" if pad else keys
 
     display.blit(render._dim(160), (0, 0))
 
@@ -499,9 +495,9 @@ def _render_controls(display):
     rows = (("L-DRAG LONG", "KICK — BEND THE SWIPE TO CURL"),
             ("L-DRAG SHORT", "HANDBALL TO A TEAMMATE"),
             ("R-DRAG", "DRAW A RUN PATH"),
-            (key_label("ESC", "B"), "CANCEL DRAG / BACK"),
+            (controller.key_label("ESC", "B"), "CANCEL DRAG / BACK"),
             ("R", "RETRY LEVEL"),
-            (key_label("M", "START"), "OPEN · CLOSE THIS MENU"))
+            (controller.key_label("M", "START"), "OPEN · CLOSE THIS MENU"))
     muted = pygame.Color("#b3ac97")
     for i, (key, action) in enumerate(rows):
         y = box.y + 76 + i * 38

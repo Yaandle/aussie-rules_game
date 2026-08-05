@@ -336,10 +336,6 @@ def _render_controls(display):
     binding) technically works here too but isn't the intended gesture
     for this screen, so it's left off to keep the row readable."""
     font, font_small, font_big = overlays._fonts()
-    pad = controller.is_connected()
-
-    def key_label(keys, xbox):
-        return f"{keys} · {xbox}" if pad else keys
 
     display.blit(overlays._dim(160), (0, 0))
 
@@ -354,10 +350,10 @@ def _render_controls(display):
     title = font_big.render("CONTROLS", True, pygame.Color(settings.CREAM))
     display.blit(title, (box.centerx - title.get_width() // 2, box.y + 22))
 
-    rows = ((key_label("ARROWS / WASD", "STICK"), "WALK THE MARK  ·  STEER YOUR AIM"),
-            (key_label("SPACE / ENTER", "A / RT"), "CONFIRM MARK  ·  LOCK THE METER"),
-            (key_label("ESC", "B"), "CANCEL ATTEMPT / MENU"),
-            (key_label("M", "START"), "OPEN · CLOSE MENU"))
+    rows = ((controller.key_label("ARROWS / WASD", "STICK"), "WALK THE MARK  ·  STEER YOUR AIM"),
+            (controller.key_label("SPACE / ENTER", "A / RT"), "CONFIRM MARK  ·  LOCK THE METER"),
+            (controller.key_label("ESC", "B"), "CANCEL ATTEMPT / MENU"),
+            (controller.key_label("M", "START"), "OPEN · CLOSE MENU"))
     muted = pygame.Color(_MUTED)
     for i, (key, action) in enumerate(rows):
         y = box.y + 76 + i * 38

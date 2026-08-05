@@ -60,10 +60,13 @@ from pygame._sdl2 import controller as _sdl
 BTN_A = pygame.CONTROLLER_BUTTON_A
 BTN_B = pygame.CONTROLLER_BUTTON_B
 BTN_X = pygame.CONTROLLER_BUTTON_X
-BTN_Y = pygame.CONTROLLER_BUTTON_Y          # unbound — see _BUTTON_KEYS
+BTN_Y = pygame.CONTROLLER_BUTTON_Y  # switch controlled player (see _BUTTON_KEYS) —
+                                     # was deliberately unbound since kick-aim entry
+                                     # moved to LT; Back still exists on the pad but
+                                     # nothing binds it, left out rather than
+                                     # defined-and-unused.
 BTN_LB = pygame.CONTROLLER_BUTTON_LEFTSHOULDER
 BTN_RB = pygame.CONTROLLER_BUTTON_RIGHTSHOULDER
-BTN_BACK = pygame.CONTROLLER_BUTTON_BACK
 BTN_START = pygame.CONTROLLER_BUTTON_START
 BTN_DPAD_UP = pygame.CONTROLLER_BUTTON_DPAD_UP
 BTN_DPAD_DOWN = pygame.CONTROLLER_BUTTON_DPAD_DOWN
@@ -104,16 +107,19 @@ _debug_timer = 0.0
 # RETURN or SPACE; bounce is 3 or SPACE; GOAL KICKING confirm is SPACE or
 # RETURN) so this one table covers every screen with no special-casing.
 #
-# Y is deliberately unbound: kick-aim entry moved to LT (see
-# _TRIGGER_KEYS below) so aiming can be a natural "hold LT, steer with
-# the right stick, pull RT to confirm" gesture instead of a face button.
-# A still also confirms a kick (via K_RETURN, same as RT) — left in
-# place rather than removed since redundant bindings are already this
-# project's convention (SPACE/RETURN are doubled up in several places).
+# Kick-aim entry moved to LT (see _TRIGGER_KEYS below) so aiming can be
+# a natural "hold LT, steer with the right stick, pull RT to confirm"
+# gesture instead of a face button — that freed Y up for switch-player
+# (FIFA/NBA "play now" style defensive control switching; see
+# GameState._switch_controlled_player). A still also confirms a kick
+# (via K_RETURN, same as RT) — left in place rather than removed since
+# redundant bindings are already this project's convention (SPACE/RETURN
+# are doubled up in several places).
 _BUTTON_KEYS = {
     BTN_A: pygame.K_RETURN,     # confirm / select / confirm kick target
     BTN_B: pygame.K_ESCAPE,     # back / cancel / pause
     BTN_X: pygame.K_1,          # handball
+    BTN_Y: pygame.K_TAB,        # switch controlled player
     BTN_RB: pygame.K_SPACE,     # bounce / confirm
     BTN_LB: pygame.K_c,         # character menu toggle
     BTN_START: pygame.K_m,      # pause / controls overlay
@@ -193,6 +199,16 @@ def is_connected():
     state frame to frame, since _open/handle_device_event mutate
     _controllers directly."""
     return bool(_controllers)
+
+
+def key_label(keys, xbox):
+    """Formats a CONTROLS-overlay row's key column: plain `keys` normally,
+    or `keys · xbox` while a controller is connected. The one shared bit
+    of logic behind all three CONTROLS overlays' rows (render.py's
+    _render_menu, hero_render.py's/goalkick_render.py's
+    _render_controls), so each one doesn't redefine the same tiny
+    closure over its own locally-cached is_connected() check."""
+    return f"{keys} · {xbox}" if is_connected() else keys
 
 
 def _stick_axis(c, axis, deadzone):
