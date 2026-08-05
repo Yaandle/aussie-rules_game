@@ -98,6 +98,35 @@ BALL_BOUNCE_HOPS = 2            # diminishing hops before it settles flat
 BALL_BOUNCE_MAX_HEIGHT = 3.0    # world units, first hop's peak height cap
 BALL_BOUNCE_HOP_DURATION = 0.22 # seconds for one hop's up-and-down arc
 BALL_BOUNCE_DECAY = 0.45        # each successive hop's height/duration multiplier
+
+# Horizontal roll layered on top of the vertical bounce above (see
+# entities.Ball.start_bounce/advance_bounce) — without this the ball only
+# ever hopped in place at the exact landing point; a grounded kick should
+# actually carry on a little further along its travel direction before
+# stopping, same as a real footy. Capped and decelerating rather than a
+# fixed distance, so a short dribbled kick barely rolls while a long one
+# rolls further (still capped well short of anything that would make the
+# resting spot hard to find).
+BALL_ROLL_DISTANCE_FACTOR = 0.12  # fraction of the kick's flight distance
+                                    # that becomes roll distance
+BALL_ROLL_MAX_DISTANCE = 9.0      # world units, hard cap regardless of kick length
+BALL_ROLL_DURATION = 0.7          # seconds for the roll to decelerate to a stop
+
+# ── Loose ball (see possession.LOOSE_BALL, GameState._start_loose_ball /
+#    _update_loose_ball) ─────────────────────────────────────────────
+# A kick or handball that isn't a clean mark used to instantly teleport
+# possession to "the nearest opponent," however far away they actually
+# were — never a real "ball sitting on the ground" moment. Now it
+# genuinely sits (bouncing/rolling per above) until a player from either
+# team gets close enough to gather it — the human included, simply by
+# running their controlled player over it (GameState.controlled_player
+# already retargets to the nearest teammate to the ball the moment
+# nobody's carrying — see _update_controlled_player).
+LOOSE_BALL_GATHER_RADIUS = 4.0   # a player this close to the resting ball picks it up
+LOOSE_BALL_CHASE_SPEED = 11.0    # both teams' nearest players converge on a loose
+                                   # ball at this speed (a shade brisker than
+                                   # DEFENDER_SPEED's arm's-length shadowing pace —
+                                   # a loose ball is worth actually sprinting for)
 # Display pixels/second the kick-aim cursor moves under a controller's
 # right stick (see game_state.GameState.update / controller.right_stick).
 # Only used while a controller is actively pushing that stick — mouse
@@ -151,7 +180,12 @@ KICK_BASE_ACC        = 0.68  # long range, lower base accuracy
 PRESSURE_PENALTY_HB  = 0.35  # how much full pressure erodes a handball
 PRESSURE_PENALTY_KICK = 0.50 # how much full pressure erodes a kick
 KICK_DISTANCE_PENALTY = 0.35 # accuracy lost at maximum kick range
-CONTEST_RADIUS       = 10.0  # RED player this close to a kick target contests
+CONTEST_RADIUS       = 10.0  # once a teammate is already in MARK_RADIUS of the
+                              # drop (below), an opponent within this radius too
+                              # turns a clean mark into a contested one — see
+                              # mechanics.resolve_kick, which only checks this
+                              # AFTER confirming a genuine mark target exists,
+                              # never against the whole opposing roster regardless
 MARK_RADIUS          = 12.0  # teammate this close to target can take the mark
 
 # ── Turnover / reset pacing ─────────────────────────────────────────

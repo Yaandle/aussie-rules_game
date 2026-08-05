@@ -80,6 +80,26 @@ def update_off_ball(players, home_positions, focus_pos, dt):
         _step_toward(p, (tx, ty), settings.OFF_BALL_SPEED, dt, stop_at=1.0)
 
 
+def chase_loose_ball(players, ball_pos, dt, max_chasers, speed):
+    """The nearest `max_chasers` of `players` sprint flat-out at a loose
+    ball (see possession.LOOSE_BALL / GameState._update_loose_ball).
+
+    Deliberately its own function rather than reusing update_defenders:
+    that one always pulls up at DEFENDER_MIN_DIST ("arm's length"
+    pressure-shadowing around a carrier, never actually reaching them —
+    correct for that purpose, wrong here), whereas the entire point of
+    chasing a loose ball is to actually run onto it (stop_at=0.0), so a
+    gather can ever trigger for anyone but the human. Everyone else on
+    the list stands pat — a loose ball is usually gathered within a
+    second or two, so pulling the whole off-ball formation toward it the
+    way update_off_ball does for a held ball would look like the entire
+    side abandoning shape for what's typically a brief 50-50.
+    """
+    chasers = sorted(players, key=lambda p: p.distance_to(ball_pos))[:max_chasers]
+    for p in chasers:
+        _step_toward(p, ball_pos, speed, dt, stop_at=0.0)
+
+
 def push_apart(a, b, target_gap):
     """Push two players directly apart along their connecting vector so
     they end up at least `target_gap` apart, both clamped back inside
@@ -170,46 +190,50 @@ def resolve_handball(carrier, target_teammate, pressure):
 def resolve_kick(carrier, target_point, opponents, teammates, pressure):
     """Resolve a kick toward target_point.
 
-    Returns a dict with:
-      "result": "mark" | "contest" | "turnover"
-      "winner": the Player who ends up with the ball (None only if no
-                players exist at all)
-    Rules:
-      - A RED player within CONTEST_RADIUS of the target forces a contest,
-        resolved by proximity-weighted roll (resolve_contest).
-      - Otherwise a clean accuracy roll: success gives the mark to the
-        nearest teammate in MARK_RADIUS (or the carrier retains if none);
-        failure is a turnover to the nearest RED player.
+    Returns a dict with "result": "mark" | "contest" | "grounded".
+      "mark"     — an accurate kick with a teammate genuinely there to
+                   catch it, and nobody spoiling. "winner" is that
+                   teammate.
+      "contest"  — an accurate kick landing right where a teammate AND
+                   an opponent are both within CONTEST_RADIUS of the
+                   drop — a genuine pack marking contest, resolved by
+                   proximity-weighted roll (resolve_contest) or, for a
+                   caller running it as a live reaction race
+                   (contest_minigame.py), via the returned "candidates".
+      "grounded" — anything else: the kick missed its accuracy roll, or
+                   it was accurate but nobody was there to mark it. No
+                   "winner" — the ball hits the turf loose and the
+                   caller (GameState) handles the bounce/roll/gather
+                   flow (see settings.py's "Loose ball" section) rather
+                   than this function guessing who "should" get it.
+
+    Deliberately does NOT check for opponents anywhere near the target
+    unless a teammate was actually there to contest a mark with them —
+    checking proximity against the ENTIRE opposing roster regardless of
+    whether anyone was a genuine mark target meant a kick into empty
+    space could still register as a "contest" purely because some
+    unrelated player (e.g. a formation line, or a defender who'd
+    wandered nearby chasing the carrier) happened to sit within
+    CONTEST_RADIUS of that empty patch of ground.
     """
     distance = _dist(carrier.pos, target_point)
-
-    contesting = [o for o in opponents
-                  if o.distance_to(target_point) <= settings.CONTEST_RADIUS]
-    if contesting:
-        candidates = contesting + [t for t in teammates
-                                   if t.distance_to(target_point) <= settings.CONTEST_RADIUS
-                                   and t is not carrier]
-        winner = resolve_contest(target_point, candidates)
-        # "candidates" lets a caller run this as a live reaction contest
-        # (contest_minigame.py) between the two closest players instead
-        # of just taking "winner", the instant proximity-weighted roll —
-        # "winner" stays here too so contests-disabled callers keep
-        # today's exact behavior with no extra branching.
-        return {"result": "contest", "winner": winner, "candidates": candidates}
 
     if random.random() < kick_accuracy(pressure, distance):
         receivers = [t for t in teammates
                      if t is not carrier
                      and t.distance_to(target_point) <= settings.MARK_RADIUS]
         if receivers:
+            contesting = [o for o in opponents
+                          if o.distance_to(target_point) <= settings.CONTEST_RADIUS]
+            if contesting:
+                candidates = contesting + receivers
+                winner = resolve_contest(target_point, candidates)
+                return {"result": "contest", "winner": winner, "candidates": candidates}
             winner = min(receivers, key=lambda t: t.distance_to(target_point))
-        else:
-            winner = carrier  # uncontested mark retained by the carrier
-        return {"result": "mark", "winner": winner}
+            return {"result": "mark", "winner": winner}
 
-    # Missed kick: nearest opponent to the landing spot takes possession.
-    winner = min(opponents, key=lambda o: o.distance_to(target_point)) if opponents else carrier
-    return {"result": "turnover", "winner": winner}
+    # Inaccurate kick, or accurate but unmarked: a genuine loose ball.
+    return {"result": "grounded"}
 
 
 def resolve_contest(target_point, nearby_players):

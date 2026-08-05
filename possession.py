@@ -22,6 +22,16 @@ State machine:
                       the next frame (see GameState.update) since a
                       kickout is just a normal carry from a fixed spot,
                       not an ongoing dead-ball phase in this pass.
+  LOOSE_BALL        — nobody's carrying: an inaccurate kick, an accurate
+                      kick nobody was there to mark, or a spilled
+                      handball. The ball bounces/rolls to a stop (see
+                      entities.Ball.start_bounce) and just sits there —
+                      both teams' nearest players converge on it (see
+                      GameState._update_loose_ball) and whoever actually
+                      reaches it gathers it, human included, simply by
+                      running their controlled player over it. Replaces
+                      what used to be an instant handoff to "the nearest
+                      opponent, however far away they actually were."
 """
 
 import settings
@@ -29,6 +39,7 @@ import settings
 HELD_PLAYER = "held_player"
 IN_CONTEST = "in_contest"
 DEAD_BALL_KICKOUT = "dead_ball_kickout"
+LOOSE_BALL = "loose_ball"
 
 
 def attacking_goal(team):

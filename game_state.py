@@ -681,8 +681,11 @@ class GameState:
         if outcome["success"]:
             self._pending_outcome = {"type": "possession", "player": target}
         else:
-            spill = min(self.opponents, key=lambda o: o.distance_to(target.pos))
-            self._pending_outcome = {"type": "turnover", "player": spill}
+            # Dropped/spilled — a genuine loose ball at the target's feet
+            # rather than an instant teleport to whichever opponent was
+            # nearest (however far away that actually was); see
+            # _apply_pending_outcome's "grounded" branch.
+            self._pending_outcome = {"type": "grounded"}
         self.mode = MODE_IDLE
 
     def _attempt_kick(self, target_point):
@@ -723,7 +726,15 @@ class GameState:
             outcome = mechanics.resolve_kick(carrier, target_point, opposing_team,
                                              own_team, pressure)
             candidates = outcome.get("candidates") or []
-            if (outcome["result"] == "contest"
+            if outcome["result"] == "grounded":
+                # Inaccurate, or accurate but nobody was there to mark it:
+                # a genuine loose ball — see _apply_pending_outcome's
+                # "grounded" branch / _start_loose_ball. No winner is
+                # decided here; it's whoever actually reaches the ball
+                # once it's down (mechanics.resolve_kick's own docstring
+                # explains why this isn't guessed at kick-time anymore).
+                self._pending_outcome = {"type": "grounded"}
+            elif (outcome["result"] == "contest"
                     and self.mode_config.get("contests_enabled", True)
                     and len(candidates) >= 2):
                 # Defer the dice-roll to a live reaction contest instead
@@ -831,6 +842,8 @@ class GameState:
         ai_control.decide_next_action(self, dt)
 
         self._update_defenders_and_shape(dt)
+        if self.possession_state == possession.LOOSE_BALL:
+            self._update_loose_ball(dt)
 
         # Push apart any two players left standing closer than
         # PLAYER_MIN_SEPARATION after this frame's movement — nothing
@@ -864,8 +877,10 @@ class GameState:
         FULL GAME (not scenarios — see FORMATION_LINES/_load_layout
         comments) the rest of both sides also ease toward their kickoff
         formation shape, blended toward the ball, so a 16-a-side roster
-        doesn't stand frozen off the ball. No-ops with nobody carrying
-        (shouldn't happen in practice, but keeps this safe).
+        doesn't stand frozen off the ball. No-ops while nobody's
+        carrying — a real, expected state now (see possession.LOOSE_BALL
+        / _update_loose_ball, called separately from update() and
+        handling player convergence its own way while the ball's down).
         """
         carrier = self.carrier
         if carrier is None:
@@ -900,6 +915,68 @@ class GameState:
             resting = [t for t in carrying_teammates
                       if not t.is_ball_carrier and t is not self.controlled_player]
             mechanics.update_off_ball(resting, home, carrier.pos, dt)
+
+    def _update_loose_ball(self, dt):
+        """Nobody's carrying (see possession.LOOSE_BALL) — the nearest
+        couple of players from EACH team sprint at the ball itself
+        (mechanics.chase_loose_ball, not update_defenders: a loose ball
+        is run onto, not shadowed at arm's length) instead of one side
+        chasing a carrier. The human's controlled_player is excluded
+        from YELLOW's automatic chase, same reasoning as
+        _update_defenders_and_shape's exclusion — running your own
+        controlled player onto the ball is something the human does
+        themselves via normal movement input, not something the AI does
+        for them.
+
+        Whoever actually gets within LOOSE_BALL_GATHER_RADIUS picks it
+        up — instantly if only one player arrives, or via the same
+        reaction contest a pack-marked kick already uses if two arrive
+        together (a real 50/50), preferring one player per side when
+        both are represented so it reads as a genuine contest rather
+        than two teammates racing each other.
+        """
+        ball_pos = self.ball.pos
+        chasing_yellow = [p for p in self.teammates if p is not self.controlled_player]
+        mechanics.chase_loose_ball(chasing_yellow, ball_pos, dt,
+                                   settings.MAX_CHASERS, settings.LOOSE_BALL_CHASE_SPEED)
+        mechanics.chase_loose_ball(self.opponents, ball_pos, dt,
+                                   settings.MAX_CHASERS, settings.LOOSE_BALL_CHASE_SPEED)
+
+        gatherers = [p for p in self.players
+                     if p.distance_to(ball_pos) <= settings.LOOSE_BALL_GATHER_RADIUS]
+        if not gatherers:
+            return
+        if len(gatherers) == 1:
+            winner = gatherers[0]
+            self._give_possession(winner)
+            self._show_message("GATHERED")
+            # Only a scenario turnover when the OPPONENT ends up with it —
+            # YELLOW gathering their own loose ball back is scrappy, not
+            # a turnover (matches every other _register_turnover call
+            # site, which only ever fires once the ball concretely ends
+            # up with the non-human side).
+            if winner.team != settings.YELLOW:
+                self._register_turnover()
+            return
+        yellow = [p for p in gatherers if p.team == settings.YELLOW]
+        red = [p for p in gatherers if p.team == settings.RED]
+        if yellow and red:
+            pair = [min(yellow, key=lambda p: p.distance_to(ball_pos)),
+                   min(red, key=lambda p: p.distance_to(ball_pos))]
+        else:
+            pair = sorted(gatherers, key=lambda p: p.distance_to(ball_pos))[:2]
+        if self.mode_config.get("contests_enabled", True):
+            self._start_contest(pair, "loose_ball")
+        else:
+            # Contests disabled: resolve the 50/50 instantly instead of
+            # via the minigame — mirrors _attempt_kick's own contests-
+            # disabled fallback for a pack-marked kick, which registers
+            # a turnover on the same instant-resolve-to-the-opponent
+            # basis (see that branch's "turnover" pending-outcome type).
+            winner = mechanics.resolve_contest(ball_pos, gatherers)
+            self._give_possession(winner)
+            if winner.team != settings.YELLOW:
+                self._register_turnover()
 
     def _decay_contest_timers(self, dt):
         """Tick down cooldowns/timers gated on this frame's dt (already
@@ -938,7 +1015,8 @@ class GameState:
     def _advance_ball(self, dt):
         """Step the ball's flight/bounce for one frame and apply
         whatever outcome that step resolves: out on the full, arrival
-        (mark/turnover/contest/score), or a grounded ball-up."""
+        (mark/turnover/contest/score/grounded loose ball), or a boundary
+        ball-up."""
         self.ball.follow_carrier()
         self.ball.advance_bounce(dt)
         was_in_flight = self.ball.in_flight
@@ -1210,20 +1288,27 @@ class GameState:
                 self._start_standing_mark(outcome["player"])
 
         elif outcome["type"] == "turnover":
-            # A missed kick landing loose, then scooped up by the nearest
-            # opponent — the ball genuinely hit the turf first, so this
-            # gets the cosmetic bounce (played out at the landing spot;
-            # see entities.Ball.start_bounce — purely visual, doesn't
-            # delay _give_possession or any of this method's own timing).
-            landing_spot = self.ball.pos
+            # Only reachable now via a contested mark resolved instantly
+            # instead of through the reaction minigame (mode_config's
+            # "contests_enabled" off — see _attempt_kick) where the
+            # opposing side won the roll: they caught/took it out of the
+            # pack, same as a mark — not a drop, so no ground bounce
+            # (compare the "possession" branch above, which doesn't
+            # bounce for exactly the same reason: the ball never
+            # actually touched the turf here either).
             self._give_possession(outcome["player"])
-            self.ball.start_bounce(self.ball.flight_distance)
-            self.ball.x, self.ball.y = landing_spot
             self._show_message("TURNOVER")
             self._register_turnover()
 
         elif outcome["type"] == "contest":
             self._start_contest(outcome["candidates"], "loose_ball")
+
+        elif outcome["type"] == "grounded":
+            # An inaccurate kick, an accurate kick nobody was there to
+            # mark, or a spilled handball — a genuine loose ball, not an
+            # instant handoff to "whoever happened to be nearest, however
+            # far away" (see _start_loose_ball).
+            self._start_loose_ball()
 
         elif outcome["type"] == "score":
             self._apply_score(outcome["result"], outcome["team"])
@@ -1314,6 +1399,23 @@ class GameState:
         self.possession_state = possession.HELD_PLAYER
         self.run_since_bounce = 0.0
         self.possession_held_timer = 0.0
+
+    def _start_loose_ball(self):
+        """The ball has hit the ground with nobody there to mark it (see
+        mechanics.resolve_kick's "grounded" result / a spilled handball)
+        — clear possession entirely and set it bouncing/rolling at its
+        current position (already the landing spot — see _advance_ball,
+        which calls this only right after Ball.advance_flight just set
+        x/y there) instead of handing it to "whoever's nearest, however
+        far away." possession.LOOSE_BALL then drives _update_loose_ball
+        every frame until someone actually reaches it.
+        """
+        for p in self.players:
+            p.is_ball_carrier = False
+        self.ball.possessed_by = None
+        self.possession_state = possession.LOOSE_BALL
+        self.ball.start_bounce(self.ball.flight_distance)
+        self._show_message("LOOSE BALL")
 
     def _start_standing_mark(self, marker):
         """A mark taken from beyond MARK_STAND_MIN_DISTANCE freezes the
