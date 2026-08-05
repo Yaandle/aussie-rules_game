@@ -17,6 +17,7 @@ import hero_levels
 import levels
 import mechanics
 import settings
+from character_state import CharacterState
 from entities import Ball, Player
 from goalkick_state import GoalKickState
 from hero_camera import HeroCamera
@@ -32,6 +33,10 @@ PHASE_PLAYING = "playing"
 PHASE_END = "end"
 PHASE_HERO = "hero"
 PHASE_GOALKICK = "goalkick"
+# The character customization menu — hotkey-triggered (K_c), reachable from
+# PHASE_MENU or PHASE_PLAYING and never listed in ROOT_OPTIONS/SCREEN_ROOT;
+# see GameState._open_character / _character_input / _update_character.
+PHASE_CHARACTER = "character"
 
 # Menu screens and options
 SCREEN_ROOT = "root"
@@ -40,20 +45,24 @@ SCREEN_HERO = "hero_select"
 ROOT_OPTIONS = ("FULL GAME", "SCENARIOS", "AFL HERO", "GOAL KICKING", "QUIT")
 
 # ── FULL GAME formation ──────────────────────────────────────────────
-# Six standard AFL lines, three players each (18 on-field a side —
-# interchange isn't modelled yet). Each line is a "depth" — 0.0 at a
-# team's own goal, 1.0 at the goal they're attacking — plus a tuple of
-# lateral "slots": how far across the ground each player sits (-1..1,
-# as a fraction of the oval's local half-width at that depth) and a
-# small depth "nudge" so flanks sit in a shallow curve rather than a
-# dead-straight rank. Purely a data table — a designer can retune the
-# whole formation by editing the numbers below; nothing is randomized.
+# Six standard AFL lines (16 on-field a side — interchange isn't modelled
+# yet; trimmed from 18 by dropping one slot each from centre/followers
+# below, part of the FULL GAME retune alongside settings.
+# FULL_GAME_PLAYER_SPEED / MAIN_SPRITE_SCALE / FIELD_MARGIN_*). Each line
+# is a "depth" — 0.0 at a team's own goal, 1.0 at the goal they're
+# attacking — plus a tuple of lateral "slots": how far across the ground
+# each player sits (-1..1, as a fraction of the oval's local half-width
+# at that depth) and a small depth "nudge" so flanks sit in a shallow
+# curve rather than a dead-straight rank. Purely a data table — neither
+# _line_positions nor _build_team_formation hardcodes a slot count, so a
+# designer can retune the whole formation (including its size) by editing
+# the numbers below; nothing is randomized.
 FORMATION_LINES = (
     # name,            depth,  slots: (lateral fraction, depth nudge)
     ("full_back",     0.06,  ((-0.62,  0.02), (0.0,  0.0), (0.62,  0.02))),
     ("half_back",     0.28,  ((-0.68,  0.02), (0.0,  0.0), (0.68,  0.02))),
-    ("centre",        0.50,  ((-0.85,  0.0),  (0.0,  0.0), (0.85,  0.0))),
-    ("followers",     0.50,  (( 0.06, -0.02), (-0.20, -0.035), (0.20, -0.035))),
+    ("centre",        0.50,  ((-0.85,  0.0),  (0.85,  0.0))),
+    ("followers",     0.50,  (( 0.06, -0.02), (-0.20, -0.035))),
     ("half_forward",  0.72,  ((-0.68, -0.02), (0.0,  0.0), (0.68, -0.02))),
     ("full_forward",  0.94,  ((-0.62, -0.02), (0.0,  0.0), (0.62, -0.02))),
 )
@@ -83,7 +92,7 @@ def _line_positions(depth, slots, attack_positive):
 
 
 def _build_team_formation(attack_positive):
-    """All 18 on-field spots for one team, kickoff carrier first.
+    """All 16 on-field spots for one team, kickoff carrier first.
 
     The carrier ends up at index 0 of the returned list because
     _load_layout always hands the ball to players[0] — here that's the
@@ -100,7 +109,7 @@ def _build_team_formation(attack_positive):
 
 
 def _build_full_game_layout():
-    """Programmatic 18-a-side FULL GAME kickoff layout (see
+    """Programmatic 16-a-side FULL GAME kickoff layout (see
     FORMATION_LINES) — both teams share the same formation shape,
     mirrored front-to-back so they face off across the centre (YELLOW
     attacks +x, RED attacks -x; settings.GOAL_RIGHT / GOAL_LEFT)."""
@@ -115,7 +124,7 @@ FULL_GAME_LAYOUT = _build_full_game_layout()
 
 # EXTEND: multi-quarter match structure
 # EXTEND: two controllable teams in full game mode
-# EXTEND: interchange bench (currently on-field 18s only)
+# EXTEND: interchange bench (currently on-field 16s only)
 
 
 class GameState:
@@ -130,6 +139,8 @@ class GameState:
         self.hero = None                 # active HeroState (AFL Hero mode)
         self.hero_unlocked = 1           # how many hero levels are playable
         self.goalkick = None             # active GoalKickState (GOAL KICKING mode)
+        self.character = None            # active CharacterState (CHARACTER MENU)
+        self._pre_character_phase = None  # phase to restore on exit
 
         # Mode context.
         self.game_mode = None            # "full" | "scenario"
@@ -215,6 +226,37 @@ class GameState:
         self.goalkick = GoalKickState()
         self.phase = PHASE_GOALKICK
 
+    # ── CHARACTER MENU (K_c hotkey, not a ROOT_OPTIONS entry) ────────
+
+    def _open_character(self):
+        """Enter the character menu, remembering whichever phase was
+        active so ESC / the hotkey again restores it instead of always
+        dropping back to the root menu. Adjustments made on a previous
+        visit (self.character) persist — this is a live attributes
+        screen, not a level select, so there's nothing to reset."""
+        if self.character is None:
+            self.character = CharacterState()
+        else:
+            self.character.reset_transition_in()
+        self._pre_character_phase = self.phase
+        self.phase = PHASE_CHARACTER
+
+    def _request_close_character(self):
+        """Start the covering half of the pixel wipe; _update_character
+        flips the phase back once it finishes (see CharacterState's
+        transition_dir/exit_ready)."""
+        if self.character is not None:
+            self.character.request_exit(self._pre_character_phase or PHASE_MENU)
+
+    def _character_input(self, event):
+        if self.character is None:
+            self.phase = PHASE_MENU
+            return
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self._request_close_character()
+            return
+        self.character.handle_input(event)
+
     # ── Convenience accessors ───────────────────────────────────────
 
     @property
@@ -252,9 +294,26 @@ class GameState:
     # ── Input dispatch ──────────────────────────────────────────────
 
     def handle_input(self, event):
-        """Route one Pygame event to the active phase's handler."""
+        """Route one Pygame event to the active phase's handler.
+
+        The CHARACTER MENU hotkey (K_c) is checked ahead of the normal
+        phase dispatch so it's reachable from PHASE_MENU or mid-match
+        (PHASE_PLAYING), the same way M already opens the controls
+        overlay during a match. `C` doesn't collide with any existing
+        binding (see _playing_input / GoalKickState.handle_input).
+        """
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_c:
+            if self.phase == PHASE_CHARACTER:
+                self._request_close_character()
+                return
+            if self.phase in (PHASE_MENU, PHASE_PLAYING):
+                self._open_character()
+                return
+
         if self.phase == PHASE_MENU:
             self._menu_input(event)
+        elif self.phase == PHASE_CHARACTER:
+            self._character_input(event)
         elif self.phase == PHASE_HERO:
             if self.hero is not None:
                 self.hero.handle_input(event)
@@ -447,6 +506,9 @@ class GameState:
         if self.phase == PHASE_GOALKICK:
             self._update_goalkick(dt)
             return
+        if self.phase == PHASE_CHARACTER:
+            self._update_character(dt)
+            return
         if self.phase != PHASE_PLAYING or self.show_menu:
             return
 
@@ -467,8 +529,8 @@ class GameState:
         # Closing defenders converge while someone holds the ball. In
         # FULL GAME (not scenarios — see FORMATION_LINES/_load_layout
         # comments) the rest of both sides also ease toward their
-        # kickoff formation shape, blended toward the ball, so an
-        # 18-a-side roster doesn't stand frozen off the ball.
+        # kickoff formation shape, blended toward the ball, so a
+        # 16-a-side roster doesn't stand frozen off the ball.
         carrier = self.carrier
         if carrier is not None:
             home = self._home_positions if self.game_mode == "full" else None
@@ -544,6 +606,18 @@ class GameState:
             self.menu_screen = SCREEN_ROOT
             self.menu_index = 3
 
+    def _update_character(self, dt):
+        """Drive the character menu's transition timer; hand the phase
+        back to wherever it was opened from once the covering wipe
+        finishes (see CharacterState.request_exit / exit_ready)."""
+        if self.character is None:
+            self.phase = PHASE_MENU
+            return
+        self.character.update(dt)
+        if self.character.exit_ready:
+            self.phase = self.character.pending_exit_phase or PHASE_MENU
+            self._pre_character_phase = None
+
     def _time_expired(self):
         """The clock hit zero: full time, or a failed scenario."""
         self.phase = PHASE_END
@@ -560,7 +634,16 @@ class GameState:
              (keys[pygame.K_LEFT] or keys[pygame.K_a])
         dy = (keys[pygame.K_DOWN] or keys[pygame.K_s]) - \
              (keys[pygame.K_UP] or keys[pygame.K_w])
-        moved = carrier.move(dx, dy, dt)
+        # FULL GAME runs at its own (slower) pace than SCENARIOS — see
+        # settings.FULL_GAME_PLAYER_SPEED and entities.Player.move's speed
+        # override. The character menu's Speed stat (character_state.py)
+        # adjusts this live, so a CharacterState's current value wins over
+        # the settings default once one exists.
+        speed = None
+        if self.game_mode == "full":
+            speed = (self.character.speed if self.character is not None
+                     else settings.FULL_GAME_PLAYER_SPEED)
+        moved = carrier.move(dx, dy, dt, speed=speed)
         self.carrier_moving = moved > 0.0
         self.run_since_bounce += moved
 

@@ -23,15 +23,21 @@ class Player:
         """Position as an (x, y) tuple."""
         return (self.x, self.y)
 
-    def move(self, dx, dy, dt):
+    def move(self, dx, dy, dt, speed=None):
         """Move by a normalized direction, clamped inside the field oval.
+
+        `speed` overrides settings.PLAYER_SPEED for callers that want a
+        different pace — FULL GAME passes settings.FULL_GAME_PLAYER_SPEED
+        (or the character menu's live-adjusted value) for its carrier, for
+        instance, same pattern as Ball.start_flight's `speed` param. Every
+        other caller leaves it at the default and behaves exactly as before.
 
         Returns the distance actually travelled (used for the bounce rule).
         """
         if dx == 0 and dy == 0:
             return 0.0
         length = math.hypot(dx, dy)
-        step = settings.PLAYER_SPEED * dt
+        step = (speed if speed is not None else settings.PLAYER_SPEED) * dt
         nx = self.x + (dx / length) * step
         ny = self.y + (dy / length) * step
 

@@ -51,12 +51,17 @@ FPS       = 60
 # ── Field geometry (logical units) ──────────────────────────────────
 # Reference-image proportions: the oval spans ~85% of frame width with a
 # quiet band of surrounds — players read smaller against more open grass.
-FIELD_MARGIN_X = 20
-FIELD_MARGIN_Y = 14
+# Margins trimmed slightly (from 20/14) to grow the oval a bit, compensating
+# for FULL GAME's 16-a-side roster (see game_state.FORMATION_LINES) without
+# touching LOGICAL_W/H/WINDOW_W/H or any camera rig. Scenarios/AFL HERO use
+# literal hand-placed coordinates (levels.py/hero_levels.py), so the bigger
+# oval reads as a modest cosmetic change there, not a functional one.
+FIELD_MARGIN_X = 17
+FIELD_MARGIN_Y = 12
 FIELD_LEFT   = FIELD_MARGIN_X
 FIELD_TOP    = FIELD_MARGIN_Y
-FIELD_W      = LOGICAL_W - 2 * FIELD_MARGIN_X   # 160
-FIELD_H      = LOGICAL_H - 2 * FIELD_MARGIN_Y   # 84
+FIELD_W      = LOGICAL_W - 2 * FIELD_MARGIN_X   # 166
+FIELD_H      = LOGICAL_H - 2 * FIELD_MARGIN_Y   # 88
 FIELD_CX     = LOGICAL_W / 2
 FIELD_CY     = LOGICAL_H / 2
 
@@ -72,6 +77,13 @@ BOUNCE_INTERVAL = 15.0    # logical units of running allowed between bounces
 
 # ── Movement / action tuning ────────────────────────────────────────
 PLAYER_SPEED    = 28.0    # logical units per second (slow, deliberate)
+# FULL GAME only (see entities.Player.move's speed override and
+# game_state._update_movement) — a further ~32% cut on top of PLAYER_SPEED,
+# tuned for the bigger 16-a-side FULL GAME field. SCENARIOS keeps
+# PLAYER_SPEED untouched since its levels.py time_limit values were balanced
+# against it. The character menu's Speed stat (character_state.py) adjusts
+# this same value live, within CHARACTER_SPEED_MIN/MAX below.
+FULL_GAME_PLAYER_SPEED = 19.0
 HANDBALL_RANGE  = 34.0    # max distance to a teammate for a handball
 KICK_MAX_RANGE  = 88.0    # beyond this a kick can't be aimed
 BALL_FLIGHT_SPEED = 95.0  # logical units per second while ball is airborne
@@ -127,10 +139,13 @@ MAIN_CAM_LERP   = 1.8    # slower ease than Hero's 3.0 -> camera feels more fixe
 MAIN_HORIZON_Y  = 0.40   # unchanged
 # Own sprite-scale knob (mirrors HERO_SPRITE_SCALE) so FULL GAME / SCENARIOS
 # can be tuned independently of Hero mode. Smaller than Hero's 1.15: with
-# up to 36 bodies on the oval instead of a handful, shrinking each sprite
+# up to 32 bodies on the oval instead of a handful, shrinking each sprite
 # a touch keeps the foreground readable instead of turning into a mush of
-# overlapping guernseys.
-MAIN_SPRITE_SCALE = 0.85
+# overlapping guernseys. Dropped further (from 0.85) alongside FULL GAME's
+# 16-a-side retune (settings.FULL_GAME_PLAYER_SPEED, game_state.FORMATION_LINES)
+# so the smaller, slower roster reads as a deliberate scale change, not
+# just a lower body count.
+MAIN_SPRITE_SCALE = 0.65
 
 # ── AFL Hero mode: decision & swipe tuning ──────────────────────────
 HERO_SLOWMO       = 0.12  # deep time dilation while deciding
@@ -215,3 +230,34 @@ GOALKICK_WIDE_CAM_BACK   = 55.0
 GOALKICK_WIDE_CAM_HEIGHT = 34.0
 GOALKICK_WIDE_CAM_FOCAL  = 430.0
 GOALKICK_TRANSITION_TIME = 0.9   # seconds for the wide -> tight swoop
+
+# ── CHARACTER MENU: camera & attributes (character_state.py) ─────────
+# A hotkey-triggered (K_c) customization screen, entirely separate from
+# ROOT_OPTIONS — a single fixed HeroCamera framing, close on a standing
+# player, following the same *_CAM_* naming as every other mode's rig.
+# Closer and lower than GOAL KICKING's already-close first-person rig for
+# a tight "portrait" read, since there's exactly one player on screen and
+# nothing else needs to fit in frame.
+CHARACTER_CAM_BACK   = 15.0
+CHARACTER_CAM_HEIGHT = 9.0
+CHARACTER_CAM_FOCAL  = 480.0
+CHARACTER_CAM_LERP   = 2.0
+CHARACTER_HORIZON_Y  = 0.50
+# Own sprite-scale knob (mirrors HERO_SPRITE_SCALE / GOALKICK_SPRITE_SCALE).
+# Bigger than either — a close single-player portrait can afford it.
+CHARACTER_SPRITE_SCALE = 1.8
+
+# Speed nudges settings.FULL_GAME_PLAYER_SPEED's live value directly (see
+# game_state._update_movement); Height has no gameplay hook yet, so it
+# just scales the preview sprite (character_render.py) until a future pass
+# gives it one, per the character menu's feature note in game_state.py.
+CHARACTER_SPEED_MIN   = 12.0
+CHARACTER_SPEED_MAX   = 26.0
+CHARACTER_SPEED_STEP  = 1.0
+CHARACTER_HEIGHT_MIN  = 0.85
+CHARACTER_HEIGHT_MAX  = 1.20
+CHARACTER_HEIGHT_STEP = 0.05
+
+# Pixel-wipe transition in/out of the menu (character_render.py) — short
+# and hard-edged, consistent with this game's chunky low-res look.
+CHARACTER_TRANSITION_TIME = 0.3   # seconds
