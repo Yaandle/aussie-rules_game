@@ -188,10 +188,30 @@ KICK_DISTANCE_PENALTY = 0.35 # accuracy lost at maximum kick range
 CONTEST_RADIUS       = 10.0  # once a teammate is already in MARK_RADIUS of the
                               # drop (below), an opponent within this radius too
                               # turns a clean mark into a contested one — see
-                              # mechanics.resolve_kick, which only checks this
-                              # AFTER confirming a genuine mark target exists,
+                              # mechanics.resolve_kick_landing, which only checks
+                              # this AFTER confirming a genuine mark target exists,
                               # never against the whole opposing roster regardless
 MARK_RADIUS          = 12.0  # teammate this close to target can take the mark
+
+# ── Field kick landing & drop-zone contest (arrival-time resolution) ──
+# A field kick's accuracy roll (mechanics.resolve_field_kick_launch) only
+# decides where it comes down (mechanics.kick_landing_point) — who ends
+# up with it is resolved later, at arrival (mechanics.resolve_kick_landing),
+# against wherever players actually are by then. These control both
+# halves of that: how far an inaccurate kick scatters, and how hard
+# nearby players close on the drop while the ball's still in the air.
+KICK_SCATTER_BASE           = 3.0   # minimum scatter on a failed accuracy roll,
+                                      # even at zero pressure/distance
+KICK_SCATTER_DIST_FACTOR    = 10.0  # extra scatter added at max KICK_MAX_RANGE
+KICK_SCATTER_PRESSURE_FACTOR = 6.0  # extra scatter added under full pressure
+KICK_CONVERGE_RADIUS = 30.0  # players within this of the drop actively close on
+                              # it while the kick's airborne (wider than
+                              # CONTEST_RADIUS/MARK_RADIUS so someone reasonably
+                              # close gets pulled in, not the whole opposite team)
+KICK_CONVERGE_SPEED  = 14.0  # closing speed while converging on a drop zone —
+                              # matches HERO_INTERCEPT_SPEED, well clear of
+                              # DEFENDER_SPEED (9.0) so it's visible inside a
+                              # sub-1s flight
 
 # ── Turnover / reset pacing ─────────────────────────────────────────
 FLASH_DURATION       = 0.5   # seconds a score flash stays on screen

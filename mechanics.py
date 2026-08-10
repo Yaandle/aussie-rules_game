@@ -187,53 +187,109 @@ def resolve_handball(carrier, target_teammate, pressure):
     return {"success": random.random() < chance, "receiver": target_teammate}
 
 
-def resolve_kick(carrier, target_point, opponents, teammates, pressure):
-    """Resolve a kick toward target_point.
+def resolve_field_kick_launch(pressure, distance):
+    """Whether a field kick is accurate — the one thing about a kick
+    that's still decided at the moment it's struck, since accuracy is a
+    property of the kick itself, not of who's standing where. WHO ends
+    up with it is resolved later, at arrival, against wherever players
+    actually are by then (see kick_landing_point / resolve_kick_landing
+    / converge_on_drop_zone below) rather than guessed here.
+    """
+    return random.random() < kick_accuracy(pressure, distance)
+
+
+def kick_scatter_error(pressure, distance):
+    """Landing scatter radius for an inaccurate field kick — same shape
+    as hero_kick_error, with its own settings constants so FULL GAME's
+    feel tunes independently from AFL Hero's."""
+    dist_factor = min(distance / settings.KICK_MAX_RANGE, 1.0)
+    return (settings.KICK_SCATTER_BASE
+            + settings.KICK_SCATTER_DIST_FACTOR * dist_factor
+            + settings.KICK_SCATTER_PRESSURE_FACTOR * pressure)
+
+
+def kick_landing_point(target_point, pressure, distance, accurate):
+    """Where a field kick actually comes down. Dead on target if the
+    accuracy roll (resolve_field_kick_launch) succeeded; otherwise
+    scattered off it (see kick_scatter_error) — a miss now visibly
+    reads as a miss instead of the ball flying dead-straight to the
+    exact aimed point regardless of accuracy, which is what happened
+    before this kick was arrival-resolved.
+    """
+    if accurate:
+        return target_point
+    error = kick_scatter_error(pressure, distance)
+    return clamp_to_oval(*scatter_point(target_point, error))
+
+
+def resolve_kick_landing(landing, kicker, opposing_team, own_team):
+    """Classify a field kick's arrival: mark, contest, or grounded —
+    against LIVE positions (own_team/opposing_team as they stand right
+    now, having had the whole flight to close on `landing` via
+    converge_on_drop_zone, not as they stood at the moment of the kick).
 
     Returns a dict with "result": "mark" | "contest" | "grounded".
-      "mark"     — an accurate kick with a teammate genuinely there to
-                   catch it, and nobody spoiling. "winner" is that
-                   teammate.
-      "contest"  — an accurate kick landing right where a teammate AND
-                   an opponent are both within CONTEST_RADIUS of the
-                   drop — a genuine pack marking contest, resolved by
-                   proximity-weighted roll (resolve_contest) or, for a
-                   caller running it as a live reaction race
-                   (contest_minigame.py), via the returned "candidates".
-      "grounded" — anything else: the kick missed its accuracy roll, or
-                   it was accurate but nobody was there to mark it. No
-                   "winner" — the ball hits the turf loose and the
-                   caller (GameState) handles the bounce/roll/gather
-                   flow (see settings.py's "Loose ball" section) rather
-                   than this function guessing who "should" get it.
+      "mark"     — a teammate genuinely there to catch it, and nobody
+                   spoiling. "winner" is that teammate.
+      "contest"  — a teammate AND an opponent are both within
+                   CONTEST_RADIUS of the landing spot — a genuine pack
+                   marking contest, resolved by proximity-weighted roll
+                   (resolve_contest) or, for a caller running it as a
+                   live reaction race (contest_minigame.py), via the
+                   returned "candidates".
+      "grounded" — nobody genuinely there to mark it. No "winner" — the
+                   ball hits the turf loose and the caller (gameplay.py)
+                   handles the bounce/roll/gather flow (see settings.py's
+                   "Loose ball" section) rather than this function
+                   guessing who "should" get it.
 
-    Deliberately does NOT check for opponents anywhere near the target
-    unless a teammate was actually there to contest a mark with them —
-    checking proximity against the ENTIRE opposing roster regardless of
-    whether anyone was a genuine mark target meant a kick into empty
-    space could still register as a "contest" purely because some
-    unrelated player (e.g. a formation line, or a defender who'd
+    Deliberately does NOT check for opponents anywhere near the landing
+    spot unless a teammate was actually there to contest a mark with
+    them — checking proximity against the ENTIRE opposing roster
+    regardless of whether anyone was a genuine mark target meant a kick
+    into empty space could still register as a "contest" purely because
+    some unrelated player (e.g. a formation line, or a defender who'd
     wandered nearby chasing the carrier) happened to sit within
-    CONTEST_RADIUS of that empty patch of ground.
+    CONTEST_RADIUS of that empty patch of ground. Note this also means
+    a scattered miss that happens to land near a receiver CAN still be
+    marked — accuracy only controls where the ball comes down now, not
+    whether a mark is possible once it's there, same "decided by
+    position, not a hidden roll" logic as the rest of this rework.
     """
-    distance = _dist(carrier.pos, target_point)
+    receivers = [t for t in own_team
+                 if t is not kicker
+                 and t.distance_to(landing) <= settings.MARK_RADIUS]
+    if not receivers:
+        return {"result": "grounded"}
+    contesting = [o for o in opposing_team
+                  if o.distance_to(landing) <= settings.CONTEST_RADIUS]
+    if contesting:
+        candidates = contesting + receivers
+        winner = resolve_contest(landing, candidates)
+        return {"result": "contest", "winner": winner, "candidates": candidates}
+    winner = min(receivers, key=lambda t: t.distance_to(landing))
+    return {"result": "mark", "winner": winner}
 
-    if random.random() < kick_accuracy(pressure, distance):
-        receivers = [t for t in teammates
-                     if t is not carrier
-                     and t.distance_to(target_point) <= settings.MARK_RADIUS]
-        if receivers:
-            contesting = [o for o in opponents
-                          if o.distance_to(target_point) <= settings.CONTEST_RADIUS]
-            if contesting:
-                candidates = contesting + receivers
-                winner = resolve_contest(target_point, candidates)
-                return {"result": "contest", "winner": winner, "candidates": candidates}
-            winner = min(receivers, key=lambda t: t.distance_to(target_point))
-            return {"result": "mark", "winner": winner}
 
-    # Inaccurate kick, or accurate but unmarked: a genuine loose ball.
-    return {"result": "grounded"}
+def converge_on_drop_zone(players, landing_point, dt, radius, speed, exclude=None):
+    """Any of `players` within `radius` of landing_point actively close
+    on it while a kick is in the air — generalizes update_hero_interceptors
+    to work for either side (not just the defending one), since a FULL
+    GAME kick's receiving team should lead into a hanging ball too, not
+    just stand under it. `exclude` skips the human's controlled_player
+    (mirrors update_defenders_and_shape's own exclusion) so auto-drift
+    never fights player input.
+
+    This is the actual fix for kicks reading as a die-roll: before this,
+    nobody moved at all while a kick was airborne (GameState.carrier is
+    None for the whole flight, and update_defenders_and_shape no-ops on
+    that) — now whoever's close enough actually contests the drop.
+    """
+    for p in players:
+        if p is exclude:
+            continue
+        if p.distance_to(landing_point) <= radius:
+            _step_toward(p, landing_point, speed, dt, stop_at=0.0)
 
 
 def resolve_contest(target_point, nearby_players):
