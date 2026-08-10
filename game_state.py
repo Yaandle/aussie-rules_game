@@ -153,15 +153,19 @@ class GameState:
         # previous spell can't survive into the new one.
         self.controlled_player = None
         self._was_carrying = False
-        # Out-of-bounds tracking for the ball currently in flight — see
-        # gameplay.attempt_kick/attempt_handball (set on launch) and
-        # gameplay.advance_ball's OOB check (consulted every frame while
-        # airborne). A handball never draws this check (see settings.py's
-        # Out of bounds note — only a kicked ball's flight can be ruled
-        # out on the full); a scoring attempt is also exempt (its own
-        # goal/behind/miss resolution already owns the boundary near the
-        # goal line).
-        self._kick_in_flight_team = None
+        # Arrival-time kick context for the ball currently in flight —
+        # None, or a dict {"landing", "kicker", "own_team",
+        # "opposing_team", "kick_distance"} set only for a genuine field
+        # kick (see gameplay.attempt_kick), read every frame it's
+        # airborne to pull nearby players toward the drop zone
+        # (mechanics.converge_on_drop_zone) and to resolve mark/contest/
+        # grounded at arrival against live positions
+        # (mechanics.resolve_kick_landing) — see gameplay.advance_ball.
+        # A handball never sets this (see settings.py's Out of bounds
+        # note — only a kicked ball's flight can be ruled out on the
+        # full); a scoring attempt is also exempt (its own goal/behind/
+        # miss resolution already owns the boundary near the goal line).
+        self._in_flight_kick = None
         # Both classic modes share AFL Hero's diorama presentation, but use
         # their own camera tuning (settings.MAIN_CAM_*) for a slightly more
         # vertical, more fixed "broadcast" feel that differs from Hero mode.

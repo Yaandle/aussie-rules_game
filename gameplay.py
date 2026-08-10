@@ -189,7 +189,7 @@ def attempt_handball(game_state):
 
     carrier.is_ball_carrier = False
     game_state.ball.start_flight(carrier.pos, target.pos)
-    game_state._kick_in_flight_team = None   # a handball never draws the OOB check
+    game_state._in_flight_kick = None   # a handball never draws the OOB/arrival check
     if outcome["success"]:
         game_state._pending_outcome = {"type": "possession", "player": target}
     else:
@@ -209,6 +209,12 @@ def attempt_kick(game_state, target_point):
     exact method for the AI's placeholder kick) — the attacking goal,
     "own"/"opposing" player lists, and possession/turnover outcome
     are all derived from carrier.team rather than assuming YELLOW.
+
+    A scoring attempt still resolves immediately, same as always — it
+    never checked defender positions to begin with. A field kick only
+    decides accuracy and where it lands here; WHO ends up with it is
+    resolved at arrival (see advance_ball / _apply_kick_arrival below),
+    against wherever players actually are by the time it comes down.
     """
     carrier = game_state.carrier
     if carrier is None or game_state.ball.in_flight:
@@ -225,56 +231,62 @@ def attempt_kick(game_state, target_point):
 
     is_scoring_attempt = (game_state.mode_config.get("scoring_enabled", True)
                           and mechanics.is_scoring_attempt(carrier.pos, target_point, goal))
-    # Out-of-bounds only ever applies to a genuine field kick — a shot
-    # on goal necessarily aims at/near the boundary line by design
-    # (GOAL_RIGHT/GOAL_LEFT sit exactly on the oval's edge — see
-    # settings.py) and already has its own goal/behind/miss
-    # resolution, so it's exempt (see advance_ball's OOB check).
-    game_state._kick_in_flight_team = None if is_scoring_attempt else carrier.team
 
     if is_scoring_attempt:
         result = mechanics.resolve_scoring_attempt(carrier.pos, target_point, goal)
         game_state._pending_outcome = {"type": "score", "result": result, "team": carrier.team}
+        game_state._in_flight_kick = None
+        landing_point = target_point
     else:
-        outcome = mechanics.resolve_kick(carrier, target_point, opposing_team,
-                                         own_team, pressure)
-        candidates = outcome.get("candidates") or []
-        if outcome["result"] == "grounded":
-            # Inaccurate, or accurate but nobody was there to mark it:
-            # a genuine loose ball — see outcomes.apply_pending_outcome's
-            # "grounded" branch / outcomes.start_loose_ball. No winner
-            # is decided here; it's whoever actually reaches the ball
-            # once it's down (mechanics.resolve_kick's own docstring
-            # explains why this isn't guessed at kick-time anymore).
-            game_state._pending_outcome = {"type": "grounded"}
-        elif (outcome["result"] == "contest"
-                and game_state.mode_config.get("contests_enabled", True)
-                and len(candidates) >= 2):
-            # Defer the dice-roll to a live reaction contest instead
-            # of resolving it instantly — the two players actually
-            # closest to the drop (not just the first two in
-            # resolve_kick's unsorted opponents-then-teammates list)
-            # contest it.
-            nearest_two = sorted(candidates,
-                                 key=lambda p: p.distance_to(target_point))[:2]
-            game_state._pending_outcome = {"type": "contest", "candidates": nearest_two}
-        elif outcome["winner"].team == carrier.team:
-            # is_mark flags a clean, uncontested mark specifically
-            # (result == "mark") rather than any possession-type
-            # outcome — a successful handball also resolves to
-            # {"type": "possession", ...} (see attempt_handball) and
-            # must never trigger stand-the-mark.
-            game_state._pending_outcome = {"type": "possession",
-                                     "player": outcome["winner"],
-                                     "is_mark": outcome["result"] == "mark",
-                                     "kick_distance": kick_distance}
-        else:
-            game_state._pending_outcome = {"type": "turnover",
-                                     "player": outcome["winner"]}
+        accurate = mechanics.resolve_field_kick_launch(pressure, kick_distance)
+        landing_point = mechanics.kick_landing_point(target_point, pressure,
+                                                      kick_distance, accurate)
+        game_state._pending_outcome = None
+        game_state._in_flight_kick = {
+            "landing": landing_point,
+            "kicker": carrier,
+            "own_team": own_team,
+            "opposing_team": opposing_team,
+            "kick_distance": kick_distance,
+        }
 
     carrier.is_ball_carrier = False
-    game_state.ball.start_flight(carrier.pos, target_point)
+    game_state.ball.start_flight(carrier.pos, landing_point)
     game_state.mode = MODE_IDLE
+
+
+def _apply_kick_arrival(game_state, in_flight_kick):
+    """The kick has landed: classify it against wherever its receiving
+    team, opposing team, and the kicker actually stand right now (see
+    mechanics.resolve_kick_landing) and translate that into the same
+    pending-outcome shapes outcomes.apply_pending_outcome already
+    understands — the exact same decision chain attempt_kick used to
+    run inline at launch (mark-stand-distance passthrough, the
+    contests_enabled + len(candidates) >= 2 gate between the live
+    reaction minigame and an instant pre-rolled winner), just fed live
+    positions instead of kick-time ones.
+    """
+    landed = mechanics.resolve_kick_landing(
+        in_flight_kick["landing"], in_flight_kick["kicker"],
+        in_flight_kick["opposing_team"], in_flight_kick["own_team"])
+    candidates = landed.get("candidates") or []
+    if landed["result"] == "grounded":
+        game_state._pending_outcome = {"type": "grounded"}
+    elif (landed["result"] == "contest"
+            and game_state.mode_config.get("contests_enabled", True)
+            and len(candidates) >= 2):
+        nearest_two = sorted(candidates,
+                             key=lambda p: p.distance_to(in_flight_kick["landing"]))[:2]
+        game_state._pending_outcome = {"type": "contest", "candidates": nearest_two}
+    elif landed["winner"].team == in_flight_kick["kicker"].team:
+        game_state._pending_outcome = {
+            "type": "possession", "player": landed["winner"],
+            "is_mark": landed["result"] == "mark",
+            "kick_distance": in_flight_kick["kick_distance"],
+        }
+    else:
+        game_state._pending_outcome = {"type": "turnover", "player": landed["winner"]}
+    outcomes.apply_pending_outcome(game_state)
 
 
 def bounce(game_state):
@@ -525,42 +537,64 @@ def advance_ball(game_state, dt):
     """Step the ball's flight/bounce for one frame and apply
     whatever outcome that step resolves: out on the full, arrival
     (mark/turnover/contest/score/grounded loose ball), or a boundary
-    ball-up."""
+    ball-up.
+
+    For a field kick specifically (game_state._in_flight_kick set —
+    never a handball, never a scoring attempt, see attempt_kick),
+    every frame it's airborne also pulls nearby players from both
+    sides toward the drop zone (mechanics.converge_on_drop_zone) —
+    this is what makes a kick's outcome depend on what happens during
+    the flight rather than being fixed the instant it was struck.
+    """
     game_state.ball.follow_carrier()
     game_state.ball.advance_bounce(dt)
     was_in_flight = game_state.ball.in_flight
     pre_step_pos = game_state.ball.pos
+
+    in_flight_kick = game_state._in_flight_kick
+    if was_in_flight and in_flight_kick is not None:
+        landing = in_flight_kick["landing"]
+        mechanics.converge_on_drop_zone(
+            in_flight_kick["own_team"], landing, dt,
+            settings.KICK_CONVERGE_RADIUS, settings.KICK_CONVERGE_SPEED,
+            exclude=game_state.controlled_player)
+        mechanics.converge_on_drop_zone(
+            in_flight_kick["opposing_team"], landing, dt,
+            settings.KICK_CONVERGE_RADIUS, settings.KICK_CONVERGE_SPEED,
+            exclude=game_state.controlled_player)
+
     arrived = game_state.ball.advance_flight(dt)
-    # Out on the full: a kicked ball (never a handball, never a
-    # scoring attempt — see attempt_kick/attempt_handball, which
-    # only set _kick_in_flight_team for a genuine field kick) that
-    # crosses the oval boundary before landing is a free kick to
-    # whichever team didn't kick it, taken from the crossing point —
-    # checked every frame it's airborne, not just on arrival, so a
-    # kick that sails through the boundary well short of its aimed
-    # target is still caught the moment it actually crosses, per the
-    # real rule (out on the full is about crossing the line in the
-    # air, not about where the kick was originally aimed).
-    if (was_in_flight and game_state._kick_in_flight_team is not None
+    # Out on the full: a kicked ball that crosses the oval boundary
+    # before landing is a free kick to whichever team didn't kick it,
+    # taken from the crossing point — checked every frame it's
+    # airborne, not just on arrival, so a kick that sails through the
+    # boundary well short of its aimed target is still caught the
+    # moment it actually crosses, per the real rule (out on the full
+    # is about crossing the line in the air, not about where the kick
+    # was originally aimed).
+    if (was_in_flight and in_flight_kick is not None
             and mechanics.is_out_of_bounds(game_state.ball.x, game_state.ball.y)):
-        outcomes.resolve_out_on_the_full(game_state, pre_step_pos, game_state.ball.pos)
+        outcomes.resolve_out_on_the_full(game_state, pre_step_pos, game_state.ball.pos,
+                                          in_flight_kick["kicker"].team)
+        game_state._in_flight_kick = None
     elif arrived:
-        if (game_state._kick_in_flight_team is not None
-                and game_state._pending_outcome is not None
-                and game_state._pending_outcome.get("type") != "score"
-                and mechanics.is_out_of_bounds(*game_state.ball.pos)):
-            # Landed outside the oval without ever crossing the line
-            # mid-flight to trip the check above (a grounded kick
-            # landing right on/past the edge, e.g. a missed shot that
-            # drifts past the behind post and out) — neutral ball-up,
-            # not a free kick, since the ball came down rather than
-            # sailing over the line.
-            game_state._pending_outcome = None
-            game_state._show_message("BALL UP")
-            outcomes.start_ruck_contest(game_state, game_state.ball.pos)
+        if in_flight_kick is not None:
+            if mechanics.is_out_of_bounds(*game_state.ball.pos):
+                # Landed outside the oval without ever crossing the
+                # line mid-flight to trip the check above (a kick
+                # landing right on/past the edge) — neutral ball-up,
+                # not a free kick, since the ball came down rather
+                # than sailing over the line. Checked before deciding
+                # mark/contest/grounded — a landing spot that's out of
+                # bounds was never eligible to be marked in the first
+                # place.
+                game_state._show_message("BALL UP")
+                outcomes.start_ruck_contest(game_state, game_state.ball.pos)
+            else:
+                _apply_kick_arrival(game_state, in_flight_kick)
         else:
             outcomes.apply_pending_outcome(game_state)
-        game_state._kick_in_flight_team = None
+        game_state._in_flight_kick = None
 
 
 def update_pressure_aim_and_camera(game_state, raw_dt):

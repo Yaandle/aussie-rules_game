@@ -150,7 +150,7 @@ def give_possession(game_state, player):
 
 def start_loose_ball(game_state):
     """The ball has hit the ground with nobody there to mark it (see
-    mechanics.resolve_kick's "grounded" result / a spilled handball)
+    mechanics.resolve_kick_landing's "grounded" result / a spilled handball)
     — clear possession entirely and set it bouncing/rolling at its
     current position (already the landing spot — see gameplay.advance_ball,
     which calls this only right after Ball.advance_flight just set
@@ -185,13 +185,14 @@ def start_standing_mark(game_state, marker):
     }
 
 
-def resolve_out_on_the_full(game_state, pre_step_pos, out_pos):
+def resolve_out_on_the_full(game_state, pre_step_pos, out_pos, kicking_team):
     """A kicked ball just crossed the oval boundary mid-flight without
     landing/being marked/contested first — free kick to whichever
-    team didn't kick it (see game_state._kick_in_flight_team, set only
-    for a genuine field kick in gameplay.attempt_kick), taken from
-    where it crossed (mechanics.boundary_crossing_point bisects this
-    frame's travel segment for that point).
+    team didn't kick it (`kicking_team`, read off game_state._in_flight_kick
+    by the caller — set only for a genuine field kick in
+    gameplay.attempt_kick), taken from where it crossed
+    (mechanics.boundary_crossing_point bisects this frame's travel
+    segment for that point).
 
     Ends the ball's flight outright (whatever _pending_outcome was
     queued for its original landing spot is discarded — the kick
@@ -199,8 +200,6 @@ def resolve_out_on_the_full(game_state, pre_step_pos, out_pos):
     of the kicking team at the crossing spot, same "nearest player
     takes the free kick" idea as resolve_behind's kickout.
     """
-    kicking_team = game_state._kick_in_flight_team
-    game_state._kick_in_flight_team = None
     game_state._pending_outcome = None
     crossing = mechanics.boundary_crossing_point(pre_step_pos, out_pos)
     receiving_team = game_state.opponents if kicking_team == settings.YELLOW else game_state.teammates
