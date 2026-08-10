@@ -76,12 +76,7 @@ def _entity_drawables(cam, gs):
                                   int(sy) - shadow.get_height() // 2))
             display.blit(sprite, (int(sx) - w // 2, int(sy) - h - bob))
             if is_carrier:                       # hover arrow overhead
-                ax, ay = int(sx), int(sy) - h - int(6 * k) - bob
-                ay -= int(k) * ((pygame.time.get_ticks() // 400) % 2)
-                s = max(2, int(2 * k))
-                pygame.draw.polygon(display, pygame.Color(settings.LINE),
-                                    [(ax - s, ay - s), (ax + s, ay - s),
-                                     (ax, ay)])
+                hero_render.draw_carrier_arrow(display, sx, sy, h, k, bob)
             elif is_controlled:                  # small arrow overhead too,
                                                   # distinct from the carrier's
                 ax, ay = int(sx), int(sy) - h - int(5 * k) - bob
@@ -116,13 +111,7 @@ def _entity_drawables(cam, gs):
 
         def draw_ball(display, sx=sx, sy=sy, img=img, ground=ground,
                       lift=lift, scale=scale):
-            if ground is not None and lift > 0.5:
-                sh = hero_render._soft_ellipse_shadow(max(4, int(scale * 0.9)),
-                                                      max(2, int(scale * 0.35)))
-                display.blit(sh, (int(ground[0]) - sh.get_width() // 2,
-                                  int(ground[1]) - sh.get_height() // 2))
-            display.blit(img, (int(sx) - img.get_width() // 2,
-                               int(sy) - img.get_height() // 2))
+            hero_render.draw_ball_sprite(display, sx, sy, img, ground, lift, scale)
 
         items.append((depth - 0.5, draw_ball))
     return items
@@ -166,8 +155,7 @@ def _render_aim(display, cam, gs):
 def _render_hud(display, gs):
     """Hero-style charcoal chips: score & clock, mission, hints, warnings."""
     cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color("#b3ac97")
-    charcoal = pygame.Color(settings.UI_CHARCOAL)
+    muted = pygame.Color(settings.MUTED)
     ink = pygame.Color(settings.INK)
 
     # Score & clock chip, top left. SCENARIOS carry their own match
@@ -193,8 +181,7 @@ def _render_hud(display, gs):
         pygame.Color(settings.ACCENT_RED) if urgent else muted)
     w = max(score.get_width(), clock.get_width()) + 28
     chip = pygame.Rect(24, 24, w, 52)
-    pygame.draw.rect(display, charcoal, chip)
-    pygame.draw.rect(display, ink, chip, 2)
+    overlays.chip(display, chip)
     display.blit(score, (chip.x + 14, chip.y + 8))
     display.blit(clock, (chip.x + 14, chip.y + 28))
 
@@ -208,8 +195,7 @@ def _render_hud(display, gs):
         w = max(name.get_width(), tag.get_width()) + 28
         chip = pygame.Rect(0, 0, w, 52)
         chip.midtop = (settings.WINDOW_W // 2, 20)
-        pygame.draw.rect(display, charcoal, chip)
-        pygame.draw.rect(display, ink, chip, 2)
+        overlays.chip(display, chip)
         display.blit(name, (chip.centerx - name.get_width() // 2, chip.y + 8))
         display.blit(tag, (chip.centerx - tag.get_width() // 2, chip.y + 28))
 
@@ -218,8 +204,7 @@ def _render_hud(display, gs):
         hint = hero_render._text("s", "M · CONTROLS", cream)
         chip = pygame.Rect(24, settings.WINDOW_H - 56,
                            hint.get_width() + 28, 32)
-        pygame.draw.rect(display, charcoal, chip)
-        pygame.draw.rect(display, ink, chip, 2)
+        overlays.chip(display, chip)
         display.blit(hint, (chip.x + 14, chip.y + 8))
 
     # Pressure bar above the carrier while lining up a kick.
@@ -248,8 +233,7 @@ def _render_hud(display, gs):
         text = hero_render._text("f", gs.message, cream)
         rect = pygame.Rect(0, 0, text.get_width() + 32, 40)
         rect.center = (settings.WINDOW_W // 2, settings.WINDOW_H - 100)
-        pygame.draw.rect(display, charcoal, rect)
-        pygame.draw.rect(display, ink, rect, 3)
+        overlays.chip(display, rect, border=3)
         display.blit(text, (rect.x + 16, rect.y + 9))
 
 
@@ -303,20 +287,13 @@ def _render_contest(display, gs):
         pygame.draw.polygon(display, glyph,
                             _CONTEST_ARROW_POINTS[direction](*rect.center, slot * 0.22))
 
-    if contest.kind == "ruck":
-        label = "BALL UP!"
-    elif contest.kind == "tackle":
-        label = "TACKLE!"   # dead code today (tackles resolve instantly —
-                              # see GameState._resolve_tackle_now), kept as
-                              # a harmless fallback rather than deleted
-    else:
-        label = "50/50 BALL!"
+    label = "BALL UP!" if contest.kind == "ruck" else "50/50 BALL!"
     title = hero_render._text("s", label, cream)
     display.blit(title, (settings.WINDOW_W // 2 - title.get_width() // 2, top - 22))
 
     ai_progress = max((contest.progress.get(id(a), 0) for a in contest.ai_participants),
                       default=0)
-    ai_label = hero_render._text("s", f"AI {ai_progress}/{n}", pygame.Color("#b3ac97"))
+    ai_label = hero_render._text("s", f"AI {ai_progress}/{n}", pygame.Color(settings.MUTED))
     display.blit(ai_label, (settings.WINDOW_W // 2 - ai_label.get_width() // 2,
                             top + slot + 8))
 

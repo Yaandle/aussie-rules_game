@@ -42,8 +42,8 @@ class Player:
         ny = self.y + (dy / length) * step
 
         # Clamp inside the field oval (ellipse test, slight inset for the border).
-        rx = settings.FIELD_W / 2 - 2
-        ry = settings.FIELD_H / 2 - 2
+        rx = settings.FIELD_W / 2 - settings.OOB_BOUNDARY_INSET
+        ry = settings.FIELD_H / 2 - settings.OOB_BOUNDARY_INSET
         ex = (nx - settings.FIELD_CX) / rx
         ey = (ny - settings.FIELD_CY) / ry
         if ex * ex + ey * ey > 1.0:
@@ -234,8 +234,8 @@ class Ball:
             # entities.py deliberately doesn't import mechanics.py, see
             # this module's docstring). If the roll would carry it past
             # the boundary, it just stops there instead of crossing.
-            rx = settings.FIELD_W / 2 - 2
-            ry = settings.FIELD_H / 2 - 2
+            rx = settings.FIELD_W / 2 - settings.OOB_BOUNDARY_INSET
+            ry = settings.FIELD_H / 2 - settings.OOB_BOUNDARY_INSET
             ex = (nx - settings.FIELD_CX) / rx
             ey = (ny - settings.FIELD_CY) / ry
             if ex * ex + ey * ey <= 1.0:

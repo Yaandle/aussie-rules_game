@@ -47,8 +47,8 @@ def update_defenders(opponents, carrier_pos, dt, home_positions=None):
         nx = opp.x + (carrier_pos[0] - opp.x) / d * step
         ny = opp.y + (carrier_pos[1] - opp.y) / d * step
         # Stay inside the field oval (same clamp the carrier obeys).
-        rx = settings.FIELD_W / 2 - 2
-        ry = settings.FIELD_H / 2 - 2
+        rx = settings.FIELD_W / 2 - settings.OOB_BOUNDARY_INSET
+        ry = settings.FIELD_H / 2 - settings.OOB_BOUNDARY_INSET
         ex = (nx - settings.FIELD_CX) / rx
         ey = (ny - settings.FIELD_CY) / ry
         if ex * ex + ey * ey <= 1.0:

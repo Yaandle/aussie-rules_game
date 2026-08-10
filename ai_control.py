@@ -4,7 +4,7 @@ Real decision-making (tendencies, attributes, positioning/timing) is
 explicitly out of scope for this pass — see decide_next_action's HOOK
 comment below. This module only exists to make the AI's possession loop
 observable and testable: run at goal, shoot once actually in range. It
-always kicks through GameState._attempt_kick, the exact same pipeline
+always kicks through GameState.attempt_kick, the exact same pipeline
 the human uses, so scoring/marking/turnover resolution never forks
 between teams.
 
@@ -63,7 +63,7 @@ def decide_next_action(game_state, dt):
                                settings.AI_SHOT_AIM_SPREAD_DEGREES)
         aim_dx, aim_dy = mechanics.rotate_vector(dx, dy, angle)
         target = (carrier.x + aim_dx, carrier.y + aim_dy)
-        game_state._attempt_kick(target)
+        game_state.attempt_kick(target)
         return
 
     # Still out of range: keep running toward goal, but re-roll a small
@@ -86,4 +86,4 @@ def decide_next_action(game_state, dt):
     game_state.ai_hold_timer += dt
     if game_state.ai_hold_timer >= settings.AI_HOLD_TIMEOUT:
         game_state.ai_hold_timer = 0.0
-        game_state._attempt_kick(goal)
+        game_state.attempt_kick(goal)

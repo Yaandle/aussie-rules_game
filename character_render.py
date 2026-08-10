@@ -66,18 +66,9 @@ def _render_scene(display, state):
 
 
 # ── Shared panel chrome ──────────────────────────────────────────────
-
-def _panel_box(display, rect):
-    """The charcoal plate every screen in this menu is drawn on, styled
-    exactly like render.py's controls/end-screen boxes."""
-    charcoal = pygame.Color(settings.UI_CHARCOAL)
-    ink = pygame.Color(settings.INK)
-    shadow = render._soft_shadow(rect.w, rect.h)
-    display.blit(shadow, (rect.x - (shadow.get_width() - rect.w) // 2,
-                          rect.y - (shadow.get_height() - rect.h) // 2 + 6))
-    pygame.draw.rect(display, charcoal, rect)
-    pygame.draw.rect(display, ink, rect, 3)
-
+# The charcoal plate every screen in this menu is drawn on (render.panel_box)
+# is styled exactly like render.py's controls/end-screen boxes — shared
+# there now instead of a second copy living in this module.
 
 def _footer(display, text, y):
     """Inline hint line, e.g. "ARROWS · ENTER SELECT/ADJUST · ESC BACK".
@@ -128,30 +119,21 @@ def _draw_stat_bar(display, x, y, frac, fill_color, border_color):
 
 def _row_label(state, i, row):
     """('> '/'  ' + text, color) for one row of the attributes screen."""
-    cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color("#b3ac97")
-    gold = pygame.Color(settings.YELLOW)
     selected = i == state.selected
-    prefix = "> " if selected else "  "
     kind = row["kind"]
 
     if kind == "stat":
         locked = row["key"] is None
-        text = prefix + row["name"] + ("  · LOCKED" if locked else "")
-        color = muted if locked else (gold if selected else cream)
-    elif kind == "toggle":
+        return render.selectable_row(
+            row["name"] + ("  · LOCKED" if locked else ""), selected, locked)
+    if kind == "toggle":
         glyph = "[X]" if state.apply_all else "[ ]"
-        text = prefix + f"{glyph} APPLY TO ALL PLAYERS"
-        color = gold if selected else cream
-    elif kind == "picker":
+        return render.selectable_row(f"{glyph} APPLY TO ALL PLAYERS", selected)
+    if kind == "picker":
         player = state.selected_player()
         name = player["name"] if player else "NONE — PRESS ENTER"
-        text = prefix + f"SAVED PLAYER: {name}"
-        color = gold if selected else cream
-    else:   # "action" — SAVE
-        text = prefix + "SAVE"
-        color = gold if selected else cream
-    return text, color
+        return render.selectable_row(f"SAVED PLAYER: {name}", selected)
+    return render.selectable_row("SAVE", selected)   # "action"
 
 
 def render_attributes_panel(display, state):
@@ -161,11 +143,11 @@ def render_attributes_panel(display, state):
     player picker (only while APPLY TO ALL PLAYERS is off), and SAVE."""
     font, font_small, font_big = render._fonts()
     cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color("#b3ac97")
+    muted = pygame.Color(settings.MUTED)
     gold = pygame.Color(settings.YELLOW)
 
     box = pygame.Rect(40, 40, 440, 560)
-    _panel_box(display, box)
+    render.panel_box(display, box)
 
     title = font_big.render("CHARACTER", True, cream)
     display.blit(title, (box.x + 30, box.y + 20))
@@ -207,11 +189,10 @@ def render_attributes_panel(display, state):
 def render_roster_panel(display, state):
     font, font_small, font_big = render._fonts()
     cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color("#b3ac97")
-    gold = pygame.Color(settings.YELLOW)
+    muted = pygame.Color(settings.MUTED)
 
     box = pygame.Rect(40, 40, 440, 560)
-    _panel_box(display, box)
+    render.panel_box(display, box)
 
     title = font_big.render("SAVED PLAYERS", True, cream)
     display.blit(title, (box.x + 30, box.y + 20))
@@ -223,15 +204,15 @@ def render_roster_panel(display, state):
     y = box.y + 86
     for i, item in enumerate(rows):
         selected = i == state.selected
-        prefix = "> " if selected else "  "
         if item == character_state.ROSTER_NEW:
-            text = prefix + "+ NEW PLAYER"
+            label_text = "+ NEW PLAYER"
         elif item == character_state.ROSTER_BACK:
-            text = prefix + "BACK"
+            label_text = "BACK"
         else:
             tag = "  · SAVED" if item.get("persisted") else "  · SESSION"
-            text = prefix + item["name"] + tag
-        label = font.render(text, True, gold if selected else cream)
+            label_text = item["name"] + tag
+        text, color = render.selectable_row(label_text, selected)
+        label = font.render(text, True, color)
         display.blit(label, (box.x + 30, y))
 
         if selected and isinstance(item, dict):
@@ -253,7 +234,7 @@ def render_naming_panel(display, state):
     ink = pygame.Color(settings.INK)
 
     box = pygame.Rect(40, 40, 440, 200)
-    _panel_box(display, box)
+    render.panel_box(display, box)
 
     title = font_big.render("NAME YOUR PLAYER", True, cream)
     display.blit(title, (box.x + 30, box.y + 20))
@@ -274,13 +255,12 @@ def render_naming_panel(display, state):
 def render_save_prompt(display, state):
     font, font_small, font_big = render._fonts()
     cream = pygame.Color(settings.CREAM)
-    gold = pygame.Color(settings.YELLOW)
 
     display.blit(render._dim(140), (0, 0))
 
     box = pygame.Rect(0, 0, 460, 220)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
-    _panel_box(display, box)
+    render.panel_box(display, box)
 
     title_text = "SAVE PLAYER" if not state.apply_all else "SAVE DEFAULT"
     title = font_big.render(title_text, True, cream)
@@ -290,8 +270,8 @@ def render_save_prompt(display, state):
     y = box.y + 90
     for i, opt in enumerate(options):
         selected = i == state.save_choice
-        text = ("> " if selected else "  ") + opt
-        label = font.render(text, True, gold if selected else cream)
+        text, color = render.selectable_row(opt, selected)
+        label = font.render(text, True, color)
         display.blit(label, (box.centerx - 140, y))
         y += 36
 
@@ -305,14 +285,11 @@ def _render_message(display, state):
         return
     font, font_small, font_big = render._fonts()
     cream = pygame.Color(settings.CREAM)
-    charcoal = pygame.Color(settings.UI_CHARCOAL)
-    ink = pygame.Color(settings.INK)
 
     text = font.render(state.message, True, cream)
     rect = pygame.Rect(0, 0, text.get_width() + 32, 40)
     rect.center = (settings.WINDOW_W // 2, settings.WINDOW_H - 90)
-    pygame.draw.rect(display, charcoal, rect)
-    pygame.draw.rect(display, ink, rect, 3)
+    render.chip(display, rect, border=3)
     display.blit(text, (rect.x + 16, rect.y + 9))
 
 

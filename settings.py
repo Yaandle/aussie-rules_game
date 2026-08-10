@@ -27,7 +27,10 @@ TREE_LIGHT  = "#788c5c"   # canopy lit speckle
 WOOD        = "#6b5a40"   # trunks
 FENCE       = "#454738"   # dark rail fences and benches
 POST_RED    = "#c65449"   # red band at the base of each post
-ACCENT_RED  = "#c65449"   # scoreboard dot, warnings, countdown
+ACCENT_RED  = "#c65449"   # scoreboard dot, warnings, countdown — deliberately
+                            # a separate name from POST_RED even though they
+                            # match today (one's a field object, one's UI);
+                            # free to diverge later without renaming either
 DIRT        = "#b0a273"   # worn patches
 SKIN        = "#ecc9a0"   # player face/limb pixels
 HAIR        = "#2c241d"   # the big dark mop
@@ -35,6 +38,8 @@ SHORTS      = "#2a2c33"   # player shorts
 BALL_BROWN  = "#8a5a35"   # the football
 UI_CHARCOAL = "#33362e"   # scoreboard fill
 CREAM       = "#ebe4cc"   # scoreboard text
+MUTED       = "#b3ac97"   # secondary/dim HUD text — one name for every
+                            # module's former local copy of this literal
 WARM_LIGHT  = (238, 246, 210)  # hazy green-white tint (alpha in render)
 
 # ── Resolution & scaling ────────────────────────────────────────────
