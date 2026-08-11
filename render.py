@@ -134,6 +134,39 @@ def _inside_oval(x, y, inflate=0.0):
     return ex * ex + ey * ey <= 1.0
 
 
+def chip(display, rect, border=2):
+    """The charcoal-fill / ink-border HUD chip every mode's score, clock,
+    mission, hint, and message plates share — was hand-retyped as two
+    draw calls in each render module; one place now."""
+    pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), rect)
+    pygame.draw.rect(display, pygame.Color(settings.INK), rect, border)
+
+
+def panel_box(display, rect):
+    """The bigger drop-shadowed modal plate behind CONTROLS/END overlays
+    and the CHARACTER menu's panels — shadow, charcoal fill, thick ink
+    border. Same shape as `chip`, just with the cast shadow a modal needs."""
+    shadow = _soft_shadow(rect.w, rect.h)
+    display.blit(shadow, (rect.x - (shadow.get_width() - rect.w) // 2,
+                          rect.y - (shadow.get_height() - rect.h) // 2 + 6))
+    pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), rect)
+    pygame.draw.rect(display, pygame.Color(settings.INK), rect, 3)
+
+
+def selectable_row(text, selected, locked=False):
+    """('> '/'  ' + text, color) for one row of a keyboard/controller-
+    navigable list — the "> " prefix / gold-selected / cream-active /
+    muted-locked convention used by every menu screen in the game."""
+    prefix = "> " if selected else "  "
+    if locked:
+        color = pygame.Color(settings.MUTED)
+    elif selected:
+        color = pygame.Color(settings.YELLOW)
+    else:
+        color = pygame.Color(settings.CREAM)
+    return prefix + text, color
+
+
 def _draw_pixel_text(surface, text, x, y, color):
     """Tiny 3x5 pixel digits (for the on-field '50' markings)."""
     col = pygame.Color(color)
@@ -465,11 +498,7 @@ def _render_menu(display):
 
     box = pygame.Rect(0, 0, 600, 434)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
-    shadow = _soft_shadow(box.w, box.h)
-    display.blit(shadow, (box.x - (shadow.get_width() - box.w) // 2,
-                          box.y - (shadow.get_height() - box.h) // 2 + 6))
-    pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), box)
-    pygame.draw.rect(display, pygame.Color(settings.INK), box, 3)
+    panel_box(display, box)
 
     title = font_big.render("CONTROLS", True, pygame.Color(settings.CREAM))
     display.blit(title, (box.centerx - title.get_width() // 2, box.y + 22))
@@ -482,7 +511,7 @@ def _render_menu(display):
             (controller.key_label("ESC", "B"), "CANCEL AIM / MENU"),
             (controller.key_label("M", "START"), "OPEN · CLOSE MENU"),
             ("BACKSPACE", "QUIT TO MAIN MENU"))
-    muted = pygame.Color("#b3ac97")
+    muted = pygame.Color(settings.MUTED)
     for i, (key, action) in enumerate(rows):
         y = box.y + 76 + i * 38
         display.blit(font.render(key, True, pygame.Color(settings.YELLOW)),
@@ -514,8 +543,7 @@ def _render_main_menu(display, game_state):
     """Title and mode select, floating over the quiet empty oval."""
     font, font_small, font_big = _fonts()
     cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color("#b3ac97")
-    gold = pygame.Color(settings.YELLOW)
+    muted = pygame.Color(settings.MUTED)
 
     display.blit(_dim(90), (0, 0))
 
@@ -544,8 +572,8 @@ def _render_main_menu(display, game_state):
     y = 280
     for i, (name, locked, tagline) in enumerate(entries):
         selected = i == game_state.menu_index
-        text = ("> " if selected else "  ") + name + ("  · LOCKED" if locked else "")
-        color = muted if locked else (gold if selected else cream)
+        label_text = name + ("  · LOCKED" if locked else "")
+        text, color = selectable_row(label_text, selected, locked)
         label = font.render(text, True, color)
         display.blit(label, (settings.WINDOW_W // 2 - 140, y))
         if selected and tagline and not locked:
@@ -564,17 +592,13 @@ def _render_end(display, game_state):
     """Result overlay: outcome, context line, and the retry prompts."""
     font, font_small, font_big = _fonts()
     cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color("#b3ac97")
+    muted = pygame.Color(settings.MUTED)
 
     display.blit(_dim(150), (0, 0))
 
     box = pygame.Rect(0, 0, 560, 260)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
-    shadow = _soft_shadow(box.w, box.h)
-    display.blit(shadow, (box.x - (shadow.get_width() - box.w) // 2,
-                          box.y - (shadow.get_height() - box.h) // 2 + 6))
-    pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), box)
-    pygame.draw.rect(display, pygame.Color(settings.INK), box, 3)
+    panel_box(display, box)
 
     if game_state.result == "win":
         title_text, title_col = "SCENARIO COMPLETE", pygame.Color(settings.YELLOW)

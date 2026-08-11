@@ -59,6 +59,7 @@ A handful of match rules sit on top of that resolution layer:
 - **Mark / stand the mark** — a clean mark taken from beyond 15m freezes the nearest defender in place and shields the marker from a tackle for 5 seconds.
 - **Holding the ball** — get tackled and the ball is judged on how long you've held it: within the first half-second it's a neutral ball-up (nobody's fault yet), past that it's an almost-random chance to break the tackle and keep it or be pinged for holding the ball (free kick to the tackler).
 - **Out of bounds** — a kick that crosses the boundary in the air without landing first is out on the full (free kick to the other side); a kick that comes down and rolls or bounces out is a neutral ball-up instead.
+- **Loose ball** — an inaccurate kick, an accurate kick nobody was there to mark, or a spilled handball hits the turf for real: it bounces and rolls a short distance before settling, and just sits there — the nearest couple of players from each side run at it, and whoever actually reaches it gathers it (a simultaneous arrival is a genuine 50/50). Nothing is handed to "the nearest player" on the spot anymore.
 
 ## Project layout
 

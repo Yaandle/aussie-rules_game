@@ -27,7 +27,10 @@ TREE_LIGHT  = "#788c5c"   # canopy lit speckle
 WOOD        = "#6b5a40"   # trunks
 FENCE       = "#454738"   # dark rail fences and benches
 POST_RED    = "#c65449"   # red band at the base of each post
-ACCENT_RED  = "#c65449"   # scoreboard dot, warnings, countdown
+ACCENT_RED  = "#c65449"   # scoreboard dot, warnings, countdown — deliberately
+                            # a separate name from POST_RED even though they
+                            # match today (one's a field object, one's UI);
+                            # free to diverge later without renaming either
 DIRT        = "#b0a273"   # worn patches
 SKIN        = "#ecc9a0"   # player face/limb pixels
 HAIR        = "#2c241d"   # the big dark mop
@@ -35,6 +38,8 @@ SHORTS      = "#2a2c33"   # player shorts
 BALL_BROWN  = "#8a5a35"   # the football
 UI_CHARCOAL = "#33362e"   # scoreboard fill
 CREAM       = "#ebe4cc"   # scoreboard text
+MUTED       = "#b3ac97"   # secondary/dim HUD text — one name for every
+                            # module's former local copy of this literal
 WARM_LIGHT  = (238, 246, 210)  # hazy green-white tint (alpha in render)
 
 # ── Resolution & scaling ────────────────────────────────────────────
@@ -98,6 +103,35 @@ BALL_BOUNCE_HOPS = 2            # diminishing hops before it settles flat
 BALL_BOUNCE_MAX_HEIGHT = 3.0    # world units, first hop's peak height cap
 BALL_BOUNCE_HOP_DURATION = 0.22 # seconds for one hop's up-and-down arc
 BALL_BOUNCE_DECAY = 0.45        # each successive hop's height/duration multiplier
+
+# Horizontal roll layered on top of the vertical bounce above (see
+# entities.Ball.start_bounce/advance_bounce) — without this the ball only
+# ever hopped in place at the exact landing point; a grounded kick should
+# actually carry on a little further along its travel direction before
+# stopping, same as a real footy. Capped and decelerating rather than a
+# fixed distance, so a short dribbled kick barely rolls while a long one
+# rolls further (still capped well short of anything that would make the
+# resting spot hard to find).
+BALL_ROLL_DISTANCE_FACTOR = 0.12  # fraction of the kick's flight distance
+                                    # that becomes roll distance
+BALL_ROLL_MAX_DISTANCE = 9.0      # world units, hard cap regardless of kick length
+BALL_ROLL_DURATION = 0.7          # seconds for the roll to decelerate to a stop
+
+# ── Loose ball (see possession.LOOSE_BALL, GameState._start_loose_ball /
+#    _update_loose_ball) ─────────────────────────────────────────────
+# A kick or handball that isn't a clean mark used to instantly teleport
+# possession to "the nearest opponent," however far away they actually
+# were — never a real "ball sitting on the ground" moment. Now it
+# genuinely sits (bouncing/rolling per above) until a player from either
+# team gets close enough to gather it — the human included, simply by
+# running their controlled player over it (GameState.controlled_player
+# already retargets to the nearest teammate to the ball the moment
+# nobody's carrying — see _update_controlled_player).
+LOOSE_BALL_GATHER_RADIUS = 4.0   # a player this close to the resting ball picks it up
+LOOSE_BALL_CHASE_SPEED = 11.0    # both teams' nearest players converge on a loose
+                                   # ball at this speed (a shade brisker than
+                                   # DEFENDER_SPEED's arm's-length shadowing pace —
+                                   # a loose ball is worth actually sprinting for)
 # Display pixels/second the kick-aim cursor moves under a controller's
 # right stick (see game_state.GameState.update / controller.right_stick).
 # Only used while a controller is actively pushing that stick — mouse
@@ -151,8 +185,33 @@ KICK_BASE_ACC        = 0.68  # long range, lower base accuracy
 PRESSURE_PENALTY_HB  = 0.35  # how much full pressure erodes a handball
 PRESSURE_PENALTY_KICK = 0.50 # how much full pressure erodes a kick
 KICK_DISTANCE_PENALTY = 0.35 # accuracy lost at maximum kick range
-CONTEST_RADIUS       = 10.0  # RED player this close to a kick target contests
+CONTEST_RADIUS       = 10.0  # once a teammate is already in MARK_RADIUS of the
+                              # drop (below), an opponent within this radius too
+                              # turns a clean mark into a contested one — see
+                              # mechanics.resolve_kick_landing, which only checks
+                              # this AFTER confirming a genuine mark target exists,
+                              # never against the whole opposing roster regardless
 MARK_RADIUS          = 12.0  # teammate this close to target can take the mark
+
+# ── Field kick landing & drop-zone contest (arrival-time resolution) ──
+# A field kick's accuracy roll (mechanics.resolve_field_kick_launch) only
+# decides where it comes down (mechanics.kick_landing_point) — who ends
+# up with it is resolved later, at arrival (mechanics.resolve_kick_landing),
+# against wherever players actually are by then. These control both
+# halves of that: how far an inaccurate kick scatters, and how hard
+# nearby players close on the drop while the ball's still in the air.
+KICK_SCATTER_BASE           = 3.0   # minimum scatter on a failed accuracy roll,
+                                      # even at zero pressure/distance
+KICK_SCATTER_DIST_FACTOR    = 10.0  # extra scatter added at max KICK_MAX_RANGE
+KICK_SCATTER_PRESSURE_FACTOR = 6.0  # extra scatter added under full pressure
+KICK_CONVERGE_RADIUS = 30.0  # players within this of the drop actively close on
+                              # it while the kick's airborne (wider than
+                              # CONTEST_RADIUS/MARK_RADIUS so someone reasonably
+                              # close gets pulled in, not the whole opposite team)
+KICK_CONVERGE_SPEED  = 14.0  # closing speed while converging on a drop zone —
+                              # matches HERO_INTERCEPT_SPEED, well clear of
+                              # DEFENDER_SPEED (9.0) so it's visible inside a
+                              # sub-1s flight
 
 # ── Turnover / reset pacing ─────────────────────────────────────────
 FLASH_DURATION       = 0.5   # seconds a score flash stays on screen
@@ -199,6 +258,10 @@ CONTEST_COOLDOWN = 1.2       # seconds after a contest resolves before another c
                               # for the same pairing (see GameState._separate_after_contest —
                               # without this, a resolved tackle's still-adjacent participants
                               # would restart another contest on the very next eligible frame)
+POST_CONTEST_SEPARATION_MULT = 1.6  # GameState._separate_after_contest pushes a resolved
+                              # contest's two participants apart to this many multiples of
+                              # TACKLE_TRIGGER_RADIUS (see mechanics.push_apart), so the
+                              # winner gets a clean beat before anything can trigger again
 
 # ── Mark / stand-the-mark (see GameState.standing_mark, possession.py) ──
 MARK_STAND_MIN_DISTANCE = 15.0  # a kick landing as a mark past this distance

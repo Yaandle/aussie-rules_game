@@ -140,6 +140,46 @@ def _flight_lift(t, dist):
     return math.sin(math.pi * min(max(t, 0.0), 1.0)) * min(dist / 6.0, 12.0)
 
 
+# ── Shared entity-drawing primitives ─────────────────────────────────
+# Used by this module's own _entity_drawables below, and reused as-is by
+# field_render.py and goalkick_render.py's — every diorama-style renderer
+# draws its carrier arrow and its airborne ball the same way.
+
+def draw_ball_sprite(display, sx, sy, img, ground, lift, scale):
+    """Ball sprite, with a grounded contact shadow once it's dropped
+    below the "still basically on the turf" lift threshold."""
+    if ground is not None and lift > 0.5:
+        sh = _soft_ellipse_shadow(max(4, int(scale * 0.9)), max(2, int(scale * 0.35)))
+        display.blit(sh, (int(ground[0]) - sh.get_width() // 2,
+                          int(ground[1]) - sh.get_height() // 2))
+    display.blit(img, (int(sx) - img.get_width() // 2, int(sy) - img.get_height() // 2))
+
+
+def draw_carrier_arrow(display, sx, sy, h, k, bob):
+    """The small bobbing triangle overhead marking the ball carrier."""
+    ax, ay = int(sx), int(sy) - h - int(6 * k) - bob
+    ay -= int(k) * ((pygame.time.get_ticks() // 400) % 2)
+    s = max(2, int(2 * k))
+    pygame.draw.polygon(display, pygame.Color(settings.LINE),
+                        [(ax - s, ay - s), (ax + s, ay - s), (ax, ay)])
+
+
+def draw_post(display, base, band, top):
+    """One goal post: long ground shadow, white shaft, red base band, sun
+    cap — shared by this module's _post_drawables (both ends, field axes)
+    and goalkick_render's single-end kick-space equivalent."""
+    w = max(2, int(base[2] * 0.35))
+    sx, sy = int(base[0]), int(base[1])
+    pygame.draw.line(display, pygame.Color(settings.MOSS),
+                     (sx + 2, sy + 1), (sx + int(base[2] * 3.0), sy + 3), 2)
+    pygame.draw.line(display, pygame.Color(settings.LINE),
+                     (int(band[0]), int(band[1])), (int(top[0]), int(top[1])), w)
+    pygame.draw.line(display, pygame.Color(settings.POST_RED),
+                     (sx, sy), (int(band[0]), int(band[1])), w)
+    pygame.draw.circle(display, pygame.Color(settings.BG),
+                       (int(top[0]), int(top[1])), max(1, w // 2))
+
+
 # ── Scene: sky, oval, markings, posts ───────────────────────────────
 
 def _render_ground(display, cam):
@@ -247,20 +287,7 @@ def _post_drawables(cam):
                 continue
 
             def draw(display, base=base, band=band, top=top):
-                w = max(2, int(base[2] * 0.35))
-                # Long ground shadow to the right, then the shaft.
-                sx, sy = int(base[0]), int(base[1])
-                pygame.draw.line(display, pygame.Color(settings.MOSS),
-                                 (sx + 2, sy + 1),
-                                 (sx + int(base[2] * 3.0), sy + 3), 2)
-                pygame.draw.line(display, pygame.Color(settings.LINE),
-                                 (int(band[0]), int(band[1])),
-                                 (int(top[0]), int(top[1])), w)
-                pygame.draw.line(display, pygame.Color(settings.POST_RED),
-                                 (sx, sy), (int(band[0]), int(band[1])), w)
-                pygame.draw.circle(display, pygame.Color(settings.BG),
-                                   (int(top[0]), int(top[1])),
-                                   max(1, w // 2))
+                draw_post(display, base, band, top)
 
             items.append((base[3], draw))
     return items
@@ -304,12 +331,7 @@ def _entity_drawables(cam, state):
                                   int(sy) - shadow.get_height() // 2))
             display.blit(sprite, (int(sx) - w // 2, int(sy) - h - bob))
             if is_carrier:                       # hover arrow overhead
-                ax, ay = int(sx), int(sy) - h - int(6 * k) - bob
-                ay -= int(k) * ((pygame.time.get_ticks() // 400) % 2)
-                s = max(2, int(2 * k))
-                pygame.draw.polygon(display, pygame.Color(settings.LINE),
-                                    [(ax - s, ay - s), (ax + s, ay - s),
-                                     (ax, ay)])
+                draw_carrier_arrow(display, sx, sy, h, k, bob)
 
         items.append((depth, draw))
 
@@ -329,13 +351,7 @@ def _entity_drawables(cam, state):
 
         def draw_ball(display, sx=sx, sy=sy, img=img, ground=ground,
                       lift=lift, scale=scale):
-            if ground is not None and lift > 0.5:
-                sh = _soft_ellipse_shadow(max(4, int(scale * 0.9)),
-                                          max(2, int(scale * 0.35)))
-                display.blit(sh, (int(ground[0]) - sh.get_width() // 2,
-                                  int(ground[1]) - sh.get_height() // 2))
-            display.blit(img, (int(sx) - img.get_width() // 2,
-                               int(sy) - img.get_height() // 2))
+            draw_ball_sprite(display, sx, sy, img, ground, lift, scale)
 
         items.append((depth - 0.5, draw_ball))
     return items
@@ -415,8 +431,7 @@ _OBJECTIVE_TEXT = {
 def _render_hud(display, state):
     """Charcoal chips: level, clock, controls, pressure, messages."""
     cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color("#b3ac97")
-    charcoal = pygame.Color(settings.UI_CHARCOAL)
+    muted = pygame.Color(settings.MUTED)
     ink = pygame.Color(settings.INK)
 
     # Level chip, top center.
@@ -425,8 +440,7 @@ def _render_hud(display, state):
     w = max(name.get_width(), obj.get_width()) + 28
     chip = pygame.Rect(0, 0, w, 52)
     chip.midtop = (settings.WINDOW_W // 2, 20)
-    pygame.draw.rect(display, charcoal, chip)
-    pygame.draw.rect(display, ink, chip, 2)
+    render.chip(display, chip)
     display.blit(name, (chip.centerx - name.get_width() // 2, chip.y + 8))
     display.blit(obj, (chip.centerx - obj.get_width() // 2, chip.y + 28))
 
@@ -435,15 +449,13 @@ def _render_hud(display, state):
     col = pygame.Color(settings.ACCENT_RED) if state.timer < 10 else cream
     clock = _text("f", f"{m:01d}:{s:02d}", col)
     box = pygame.Rect(24, 24, clock.get_width() + 28, 36)
-    pygame.draw.rect(display, charcoal, box)
-    pygame.draw.rect(display, ink, box, 2)
+    render.chip(display, box)
     display.blit(clock, (box.x + 14, box.y + 7))
 
     # Controls hint, bottom left.
     hint = _text("s", "M · CONTROLS", cream)
     chip = pygame.Rect(24, settings.WINDOW_H - 56, hint.get_width() + 28, 32)
-    pygame.draw.rect(display, charcoal, chip)
-    pygame.draw.rect(display, ink, chip, 2)
+    render.chip(display, chip)
     display.blit(hint, (chip.x + 14, chip.y + 8))
 
     # Pressure bar above the carrier while deciding.
@@ -463,8 +475,7 @@ def _render_hud(display, state):
         text = _text("f", state.message, cream)
         rect = pygame.Rect(0, 0, text.get_width() + 32, 40)
         rect.center = (settings.WINDOW_W // 2, settings.WINDOW_H - 100)
-        pygame.draw.rect(display, charcoal, rect)
-        pygame.draw.rect(display, ink, rect, 3)
+        render.chip(display, rect, border=3)
         display.blit(text, (rect.x + 16, rect.y + 9))
 
 
@@ -483,11 +494,7 @@ def _render_controls(display):
 
     box = pygame.Rect(0, 0, 560, 360)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
-    shadow = render._soft_shadow(box.w, box.h)
-    display.blit(shadow, (box.x - (shadow.get_width() - box.w) // 2,
-                          box.y - (shadow.get_height() - box.h) // 2 + 6))
-    pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), box)
-    pygame.draw.rect(display, pygame.Color(settings.INK), box, 3)
+    render.panel_box(display, box)
 
     title = font_big.render("CONTROLS", True, pygame.Color(settings.CREAM))
     display.blit(title, (box.centerx - title.get_width() // 2, box.y + 22))
@@ -498,7 +505,7 @@ def _render_controls(display):
             (controller.key_label("ESC", "B"), "CANCEL DRAG / BACK"),
             ("R", "RETRY LEVEL"),
             (controller.key_label("M", "START"), "OPEN · CLOSE THIS MENU"))
-    muted = pygame.Color("#b3ac97")
+    muted = pygame.Color(settings.MUTED)
     for i, (key, action) in enumerate(rows):
         y = box.y + 76 + i * 38
         display.blit(font.render(key, True, pygame.Color(settings.YELLOW)),
@@ -515,17 +522,13 @@ def _render_done(display, state):
     """Win/fail overlay in the shared charcoal-plate style."""
     font, font_small, font_big = render._fonts()
     cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color("#b3ac97")
+    muted = pygame.Color(settings.MUTED)
 
     display.blit(render._dim(150), (0, 0))
 
     box = pygame.Rect(0, 0, 560, 260)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
-    shadow = render._soft_shadow(box.w, box.h)
-    display.blit(shadow, (box.x - (shadow.get_width() - box.w) // 2,
-                          box.y - (shadow.get_height() - box.h) // 2 + 6))
-    pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), box)
-    pygame.draw.rect(display, pygame.Color(settings.INK), box, 3)
+    render.panel_box(display, box)
 
     if state.result == "win":
         title_text, col = "POSSESSION WON", pygame.Color(settings.YELLOW)

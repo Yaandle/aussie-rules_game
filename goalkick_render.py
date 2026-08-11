@@ -29,8 +29,6 @@ import mechanics
 import render as overlays
 import settings
 
-_MUTED = "#b3ac97"
-
 
 # ── Local-space projection helpers ───────────────────────────────────
 
@@ -123,15 +121,7 @@ def _goal_drawables(cam, state):
             continue
 
         def draw(display, base=base, band=band, top=top):
-            w = max(2, int(base[2] * 0.35))
-            pygame.draw.line(display, pygame.Color(settings.LINE),
-                             (int(band[0]), int(band[1])),
-                             (int(top[0]), int(top[1])), w)
-            pygame.draw.line(display, pygame.Color(settings.POST_RED),
-                             (int(base[0]), int(base[1])),
-                             (int(band[0]), int(band[1])), w)
-            pygame.draw.circle(display, pygame.Color(settings.BG),
-                               (int(top[0]), int(top[1])), max(1, w // 2))
+            hero_render.draw_post(display, base, band, top)
 
         items.append((base[3], draw))
     return items
@@ -215,13 +205,7 @@ def _entity_drawables(cam, state):
 
         def draw_ball(display, sx=sx, sy=sy, img=img, ground=ground,
                       lift=lift, scale=scale):
-            if ground is not None and lift > 0.5:
-                sh = hero_render._soft_ellipse_shadow(max(4, int(scale * 0.9)),
-                                                      max(2, int(scale * 0.35)))
-                display.blit(sh, (int(ground[0]) - sh.get_width() // 2,
-                                  int(ground[1]) - sh.get_height() // 2))
-            display.blit(img, (int(sx) - img.get_width() // 2,
-                               int(sy) - img.get_height() // 2))
+            hero_render.draw_ball_sprite(display, sx, sy, img, ground, lift, scale)
 
         items.append((depth - 0.5, draw_ball))
     return items
@@ -235,17 +219,14 @@ def _render_meters(display, state):
     "no wobble" reference now — aiming itself is the reticle plus
     arrow-key steering (see _aim_drawable), this bar only adds
     timing-precision noise around wherever that's pointed."""
-    charcoal = pygame.Color(settings.UI_CHARCOAL)
-    ink = pygame.Color(settings.INK)
     cream = pygame.Color(settings.CREAM)
     gold = pygame.Color(settings.YELLOW)
-    muted = pygame.Color(_MUTED)
+    muted = pygame.Color(settings.MUTED)
 
     def bar(label, marker_frac, tick_frac, tick_color):
         rect = pygame.Rect(0, 0, 360, 22)
         rect.midtop = (settings.WINDOW_W // 2, settings.WINDOW_H - 130)
-        pygame.draw.rect(display, charcoal, rect)
-        pygame.draw.rect(display, ink, rect, 2)
+        overlays.chip(display, rect)
         if tick_frac is not None:
             tx = rect.x + int(tick_frac * rect.w)
             pygame.draw.rect(display, tick_color, (tx - 2, rect.y, 4, rect.h))
@@ -262,9 +243,7 @@ def _render_meters(display, state):
 
 def _render_wind(display, state):
     cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color(_MUTED)
-    charcoal = pygame.Color(settings.UI_CHARCOAL)
-    ink = pygame.Color(settings.INK)
+    muted = pygame.Color(settings.MUTED)
 
     label = hero_render._text("s", "WIND", muted)
     arrow = "→" if state.wind >= 0 else "←"
@@ -272,17 +251,13 @@ def _render_wind(display, state):
     w = max(label.get_width(), value.get_width()) + 28
     chip = pygame.Rect(0, 24, w, 52)
     chip.right = settings.WINDOW_W - 24
-    pygame.draw.rect(display, charcoal, chip)
-    pygame.draw.rect(display, ink, chip, 2)
+    overlays.chip(display, chip)
     display.blit(label, (chip.x + 14, chip.y + 8))
     display.blit(value, (chip.x + 14, chip.y + 26))
 
 
 def _render_hud(display, state):
     cream = pygame.Color(settings.CREAM)
-    muted = pygame.Color(_MUTED)
-    charcoal = pygame.Color(settings.UI_CHARCOAL)
-    ink = pygame.Color(settings.INK)
 
     _render_wind(display, state)
 
@@ -291,8 +266,7 @@ def _render_hud(display, state):
         "s", f"GOALS {t['goals']:02d}  BEHINDS {t['behinds']:02d}  "
              f"MISSES {t['misses']:02d}", cream)
     chip = pygame.Rect(24, 24, tally.get_width() + 28, 36)
-    pygame.draw.rect(display, charcoal, chip)
-    pygame.draw.rect(display, ink, chip, 2)
+    overlays.chip(display, chip)
     display.blit(tally, (chip.x + 14, chip.y + 8))
 
     if not state.show_menu:
@@ -306,23 +280,20 @@ def _render_hud(display, state):
             hint = hero_render._text("s", hint_text, cream)
             rect = pygame.Rect(0, 0, hint.get_width() + 32, 34)
             rect.center = (settings.WINDOW_W // 2, settings.WINDOW_H - 40)
-            pygame.draw.rect(display, charcoal, rect)
-            pygame.draw.rect(display, ink, rect, 2)
+            overlays.chip(display, rect)
             display.blit(hint, (rect.x + 16, rect.y + 7))
 
         controls = hero_render._text("s", "M · CONTROLS", cream)
         chip = pygame.Rect(24, settings.WINDOW_H - 56,
                            controls.get_width() + 28, 32)
-        pygame.draw.rect(display, charcoal, chip)
-        pygame.draw.rect(display, ink, chip, 2)
+        overlays.chip(display, chip)
         display.blit(controls, (chip.x + 14, chip.y + 8))
 
     if state.message:
         text = hero_render._text("f", state.message, cream)
         rect = pygame.Rect(0, 0, text.get_width() + 32, 40)
         rect.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2 - 140)
-        pygame.draw.rect(display, charcoal, rect)
-        pygame.draw.rect(display, ink, rect, 3)
+        overlays.chip(display, rect, border=3)
         display.blit(text, (rect.x + 16, rect.y + 9))
 
 
@@ -341,11 +312,7 @@ def _render_controls(display):
 
     box = pygame.Rect(0, 0, 600, 300)
     box.center = (settings.WINDOW_W // 2, settings.WINDOW_H // 2)
-    shadow = overlays._soft_shadow(box.w, box.h)
-    display.blit(shadow, (box.x - (shadow.get_width() - box.w) // 2,
-                          box.y - (shadow.get_height() - box.h) // 2 + 6))
-    pygame.draw.rect(display, pygame.Color(settings.UI_CHARCOAL), box)
-    pygame.draw.rect(display, pygame.Color(settings.INK), box, 3)
+    overlays.panel_box(display, box)
 
     title = font_big.render("CONTROLS", True, pygame.Color(settings.CREAM))
     display.blit(title, (box.centerx - title.get_width() // 2, box.y + 22))
@@ -354,7 +321,7 @@ def _render_controls(display):
             (controller.key_label("SPACE / ENTER", "A / RT"), "CONFIRM MARK  ·  LOCK THE METER"),
             (controller.key_label("ESC", "B"), "CANCEL ATTEMPT / MENU"),
             (controller.key_label("M", "START"), "OPEN · CLOSE MENU"))
-    muted = pygame.Color(_MUTED)
+    muted = pygame.Color(settings.MUTED)
     for i, (key, action) in enumerate(rows):
         y = box.y + 76 + i * 38
         display.blit(font.render(key, True, pygame.Color(settings.YELLOW)),
