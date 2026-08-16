@@ -80,3 +80,16 @@ A handful of match rules sit on top of that resolution layer:
 ## Look & feel
 
 A pastel-sage oval under hazy diffuse light: chibi pixel players with oversized mops of hair, physical scoreboards standing on legs, dark rail fences, puffy trees, and a low broadcast-style camera looking in across the ground. Everything is built from small logical surfaces upscaled with nearest-neighbor scaling — no external image assets, ever.
+
+
+## Main Menu
+
+![Main Menu](./mainmenu.png)
+
+## Goal Kicking
+
+![Goal Kicking](./goalkicking.png)
+
+## Full Game
+
+![Full Game](./fullgame.png)
