@@ -86,6 +86,9 @@ A pastel-sage oval under hazy diffuse light: chibi pixel players with oversized 
 
 ![Main Menu](./mainmenu.png)
 
+## Character Menu
+![Character Menu](./charactermenu.png)
+
 ## Goal Kicking
 
 ![Goal Kicking](./goalkicking.png)
