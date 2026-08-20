@@ -48,7 +48,7 @@ class Contest:
 
     def __init__(self, participants, kind, config):
         self.participants = list(participants)
-        self.kind = kind                     # "tackle" | "loose_ball"
+        self.kind = kind                     # "loose_ball" | "ruck"
         self.config = config
         self.prompts = _generate_prompts(config["prompt_count"])
         self.progress = {id(p): 0 for p in self.participants}

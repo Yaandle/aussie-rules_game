@@ -181,7 +181,7 @@ SCENARIOS = [
         "away_score_start": 0,
         "time_limit": 60.0,
         "fail_on_turnover": False,
-        # Contests/scoring toggle test fixture: no tackle/50-50 contests
+        # Contests/scoring toggle test fixture: no loose-ball/ruck contests
         # ever trigger and no kick is ever evaluated as a shot on goal —
         # confirms both toggles actually gate their feature off rather
         # than just changing its odds. Unwinnable by design (scoring is

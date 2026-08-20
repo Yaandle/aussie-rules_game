@@ -240,7 +240,7 @@ def _render_hud(display, gs):
         display.blit(text, (rect.x + 16, rect.y + 9))
 
 
-# ── Tackle / 50-50 contest overlay ───────────────────────────────────
+# ── Loose-ball / ruck contest overlay ─────────────────────────────────
 
 _CONTEST_ARROW_POINTS = {
     "UP":    lambda cx, cy, s: [(cx, cy - s), (cx - s, cy + s * 0.6), (cx + s, cy + s * 0.6)],
@@ -251,7 +251,7 @@ _CONTEST_ARROW_POINTS = {
 
 
 def _render_contest(display, gs):
-    """Tackle / 50-50 reaction minigame: a row of directional prompt
+    """Loose-ball / ruck reaction minigame: a row of directional prompt
     slots for the human's side of the race, highlighting their progress
     and flashing a slot on a miss. The AI side has no controllable
     input to give slot-by-slot feedback on, so its progress is just a

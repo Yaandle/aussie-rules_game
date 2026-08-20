@@ -77,7 +77,7 @@ def handle_playing_input(game_state, event):
 
 
 def handle_contest_input(game_state, event):
-    """While a tackle/50-50 contest is live, arrow keys and numpad
+    """While a loose-ball/ruck contest is live, arrow keys and numpad
     directions (see CONTEST_DIRECTION_KEYS) queue a press for
     outcomes.update_contest to consume next frame — a connected gamepad's
     D-pad arrives here too, already as synthetic KEYDOWN events (see
@@ -318,7 +318,7 @@ def update_playing(game_state, dt):
     exactly the sequence it always has, and the two frame-ending early
     returns (a resolved tackle; time expiring) are unchanged.
     """
-    # A live tackle/50-50 contest freezes the rest of the game (see
+    # A live loose-ball/ruck contest freezes the rest of the game (see
     # design note in possession.py's IN_CONTEST) — this is the one
     # branch point, simplest first pass rather than only freezing
     # the two participants.

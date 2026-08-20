@@ -36,7 +36,7 @@ SCREEN_SCENARIOS = "scenarios"
 SCREEN_HERO = "hero_select"
 ROOT_OPTIONS = ("FULL GAME", "SCENARIOS", "AFL HERO", "GOAL KICKING", "QUIT")
 
-# Directional prompt keys read while a tackle/50-50 contest is live (see
+# Directional prompt keys read while a loose-ball/ruck contest is live (see
 # gameplay.handle_contest_input) — arrow keys and numpad, per the contest's
 # own spec; a connected gamepad's D-pad already arrives as synthetic
 # K_UP/DOWN/LEFT/RIGHT KEYDOWN events (see controller.poll_events), so it
