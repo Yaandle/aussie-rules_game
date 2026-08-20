@@ -7,18 +7,21 @@ A small, hand-rolled Aussie Rules football game built in Python and Pygame. No e
 Requires Python 3 and Pygame (pygame-ce also works).
 
 ```
-pip install pygame
+pip install -r requirements.txt
 python main.py
 ```
 
 ## Modes
 
-- **FULL GAME** — an 18-a-side match, one quarter, on the full oval. You control the ball carrier; the rest of both sides hold rough formation shape and lean into the contest around the ball.
-- **SCENARIOS** — four designed possession moments, each with its own objective and clock: Centre Clearance, Hit the Lead, Break the Wing, Grand Final Moment.
+- **FULL GAME** — a 16-a-side match, one quarter, on the full oval. You control the ball carrier; the rest of both sides hold rough formation shape and lean into the contest around the ball. The AI opponent can score on you too — HOME/AWAY on the scoreboard both track for real.
+- **SCENARIOS** — seven designed possession moments, each with its own objective and clock. Five story missions: Centre Clearance, Hit the Lead, Break the Wing, Grand Final Moment, The Comeback. Plus two feature drills alongside them: Strip It Back (the opposition's got it — close in and win it back in a tackle contest) and Open Field Drill (no contests, no scoring, just a live 16-a-side field to move the ball around on — exit with Esc whenever you're done).
 - **AFL HERO** — a swipe-based possession puzzle mode across five levels: Break the Press, Down the Wing, Hit the Lead, Inside Fifty, After the Siren.
 - **GOAL KICKING** — a freeform practice range shot from a tight, first-person-ish camera. Walk the mark anywhere in a wide arc out from goal, read the wind, then time a two-stage power/accuracy meter to send the ball at the big sticks.
+- **CHARACTER MENU** — hit `C` from the main menu or mid-match to open it. Speed and Height are live-adjustable and actually affect play (Speed feeds FULL GAME's movement directly); the other six attributes are locked placeholders for a future upgrade system. Build a roster of named saved players, and choose per-save whether it's written to disk or kept for this session only.
 
 ## Controls
+
+An Xbox (XInput-style) controller works throughout — every menu, match action, and kick-aim assist has a mapped equivalent, picked up automatically the moment it's connected (plug in mid-session and it just works). Keyboard and mouse always work too; nothing below requires a controller.
 
 **Full Game / Scenarios**
 
@@ -40,6 +43,7 @@ python main.py
 | Right-drag | Draw a run path |
 | Esc | Cancel a drag |
 | R | Retry the level |
+| M | Open the controls menu |
 
 **Goal Kicking**
 
@@ -96,3 +100,7 @@ A pastel-sage oval under hazy diffuse light: chibi pixel players with oversized 
 ## Full Game
 
 ![Full Game](./fullgame.png)
+
+## License
+
+[MIT](./LICENSE)

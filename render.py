@@ -483,6 +483,21 @@ def _draw_player_sprite(surface, x, y, team, walking, walk_frame, variant=0):
         surface.set_at((x + 1, y + 4), boot)
 
 
+def window_icon():
+    """A window/taskbar icon built from the same chibi sprite and
+    nearest-neighbor upscale technique as every other visual in this
+    project, instead of shipping a separate .ico image asset — keeps
+    the "no image assets, ever" rule intact. Call once at startup,
+    before pygame.display.set_mode (see main.py)."""
+    base = pygame.Surface((7, 12), pygame.SRCALPHA)
+    _draw_player_sprite(base, 3, 6, settings.YELLOW, False, 0, variant=0)
+    scale = 4
+    sprite = pygame.transform.scale(base, (7 * scale, 12 * scale))
+    icon = pygame.Surface((12 * scale, 12 * scale), pygame.SRCALPHA)
+    icon.blit(sprite, ((icon.get_width() - sprite.get_width()) // 2, 0))
+    return icon
+
+
 # ── Scoreboards & HUD (display resolution) ──────────────────────────
 
 def _render_menu(display):
@@ -613,7 +628,8 @@ def _render_end(display, game_state):
         prompts = "R RETRY · ESC MENU"
     else:
         title_text, title_col = "FULL TIME", cream
-        context = f"FINAL SCORE   HOME {game_state.yellow_points:02d} - AWAY 00"
+        context = (f"FINAL SCORE   HOME {game_state.yellow_points:02d} "
+                   f"- AWAY {game_state.opp_points:02d}")
         prompts = "R REPLAY · ESC MENU"
 
     title = font_big.render(title_text, True, title_col)

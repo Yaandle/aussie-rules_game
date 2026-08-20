@@ -11,8 +11,8 @@ draws anything itself (render.py reads from it instead).
 Setup/loading and phase-machine dispatch live here; menu navigation
 (menu.py), the frame-by-frame update loop and player actions
 (gameplay.py), and possession/score/contest resolution (outcomes.py)
-are split into their own modules — see AUDIT.md's game_state.py
-decomposition. Every one of those modules follows the same convention
+are split into their own modules, each self-contained around one
+concern. Every one of those modules follows the same convention
 mechanics.py/possession.py/ai_control.py already use: functions take
 the owning GameState as their first argument rather than being methods.
 """
@@ -258,6 +258,16 @@ class GameState:
     @property
     def yellow_points(self):
         return self.score["goals"] * 6 + self.score["behinds"]
+
+    @property
+    def opp_points(self):
+        """The AI's score — outcomes.apply_score tracks it under
+        "opp_goals"/"opp_behinds" whenever a RED shot lands, but FULL
+        GAME's own kickoff carries no such thing as a fixed narrative
+        score the way a scenario's away_score_start does, so this is
+        the one place that total gets computed for display (see
+        field_render's HUD and render._render_end's FULL TIME line)."""
+        return self.score.get("opp_goals", 0) * 6 + self.score.get("opp_behinds", 0)
 
     @property
     def must_bounce(self):

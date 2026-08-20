@@ -161,16 +161,19 @@ def _render_hud(display, gs):
     # Score & clock chip, top left. SCENARIOS carry their own match
     # context (levels.py's home_score_start/away_score_start/quarter) so
     # a mission reads as a specific broadcast situation rather than a
-    # generic puzzle — AWAY stays fixed (this engine has no opposing-
-    # scoring mechanic; see levels.py's "comeback" objective note) while
-    # HOME climbs from its starting score as you actually score.
+    # generic puzzle — AWAY stays fixed there as scripted narrative
+    # context (see levels.py's "comeback" objective note) while HOME
+    # climbs from its starting score as you actually score. FULL GAME
+    # has no such scripted context, so AWAY instead reflects the AI's
+    # real live total (GameState.opp_points — see outcomes.apply_score)
+    # as it happens, same as HOME does for the human.
     if gs.game_mode == "scenario" and gs.scenario is not None:
         home_disp = gs.scenario.get("home_score_start", 0) + gs.yellow_points
         away_disp = gs.scenario.get("away_score_start", 0)
         clock_label = gs.scenario.get("quarter", "TIME")
     else:
         home_disp = gs.yellow_points
-        away_disp = 0
+        away_disp = gs.opp_points
         clock_label = "Q1"
     score = hero_render._text(
         "s", f"HOME {home_disp:02d}  AWAY {away_disp:02d}", cream)

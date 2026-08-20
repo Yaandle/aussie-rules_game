@@ -1,8 +1,9 @@
 """gameplay.py — the FULL GAME/SCENARIOS frame-by-frame update pipeline
 and player actions (kick, handball, bounce, kick-aim).
 
-Split out of game_state.py (see AUDIT.md's game_state.py decomposition)
-— follows the same convention as mechanics.py/possession.py/
+Split out of game_state.py to keep the frame-by-frame update loop and
+player actions in their own module — follows the same convention as
+mechanics.py/possession.py/
 ai_control.py: every function takes the owning `game_state` object as
 its first argument rather than being a GameState method. Calls into
 outcomes.py for every possession/score/contest resolution; outcomes.py

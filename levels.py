@@ -166,7 +166,7 @@ SCENARIOS = [
         # ball (see game_state.DEFAULT_MODE_CONFIG's "starting_possession")
         # so this scenario is specifically for verifying a human defender
         # can close in on an AI carrier and win it back in a tackle
-        # contest — see ai_possession_tackle_prompt.md's testing checklist.
+        # contest (see possession.find_tackle_trigger / outcomes.resolve_tackle_now).
         "config": {"starting_possession": "ai"},
         "yellow": _padded([(110, 50), (120, 60), (100, 45)], attack_positive=True),
         "red": _padded([(108, 52), (95, 40), (130, 65)], attack_positive=False),

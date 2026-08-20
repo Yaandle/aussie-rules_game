@@ -19,6 +19,7 @@ from game_state import (PHASE_CHARACTER, PHASE_GOALKICK, PHASE_HERO,
 def main():
     """Initialize Pygame, run the event/update/render loop, quit cleanly."""
     pygame.init()
+    pygame.display.set_icon(render.window_icon())
     display = pygame.display.set_mode((settings.WINDOW_W, settings.WINDOW_H))
     pygame.display.set_caption("AFL Prototype")
     clock = pygame.time.Clock()

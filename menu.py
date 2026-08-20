@@ -3,8 +3,9 @@ hotkey flow, and the three submode update bridges (Hero/Goal Kicking/
 Character) that route a finished submode's exit_request back to a menu
 screen.
 
-Split out of game_state.py (see AUDIT.md's game_state.py decomposition)
-— follows the same convention as mechanics.py/possession.py/
+Split out of game_state.py to keep menu navigation and submode
+bridging in their own module — follows the same convention as
+mechanics.py/possession.py/
 ai_control.py: every function takes the owning `game_state` object as
 its first argument rather than being a GameState method.
 """

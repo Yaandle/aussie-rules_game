@@ -1,8 +1,8 @@
 """outcomes.py — possession/outcome resolution: what happens once a
 kick lands, a tackle triggers, a contest resolves, or a score goes up.
 
-Split out of game_state.py (see AUDIT.md's game_state.py decomposition)
-— self-contained: touches possession/score/contest state only, never
+Split out of game_state.py to keep this concern self-contained:
+touches possession/score/contest state only, never
 menu or camera state. Follows the same convention as mechanics.py/
 possession.py/ai_control.py/contest_minigame.py: every function takes
 the owning `game_state` object as its first argument rather than being
