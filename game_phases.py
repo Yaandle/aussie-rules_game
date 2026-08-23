@@ -33,6 +33,10 @@ MODE_AIMING_KICK = "aiming_kick"
 # Menu screens and options
 SCREEN_ROOT = "root"
 SCREEN_SCENARIOS = "scenarios"
+# AFL HERO is two nested screens: SCREEN_HERO_LEAGUES lists the leagues
+# (hero_levels.HERO_LEAGUES); SCREEN_HERO lists one league's levels,
+# scoped by GameState.hero_league_index — see menu.py.
+SCREEN_HERO_LEAGUES = "hero_leagues"
 SCREEN_HERO = "hero_select"
 ROOT_OPTIONS = ("FULL GAME", "SCENARIOS", "AFL HERO", "GOAL KICKING", "QUIT")
 

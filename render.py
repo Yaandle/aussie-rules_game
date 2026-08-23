@@ -20,8 +20,9 @@ import pygame
 import controller
 import hero_levels
 import levels
+import menu
 import settings
-from game_state import ROOT_OPTIONS, SCREEN_HERO, SCREEN_ROOT
+from game_state import ROOT_OPTIONS, SCREEN_HERO, SCREEN_HERO_LEAGUES, SCREEN_ROOT
 
 # ── Module-level caches (built lazily, once) ────────────────────────
 _bg_scaled = None
@@ -29,6 +30,7 @@ _glow_cache = {}
 _vignette = None
 _haze_overlay = None
 _slowmo_overlay = None
+_wipe_cache = {}   # rounded progress (0..1, 2dp) -> scaled wipe Surface
 _font = None
 _font_small = None
 _font_big = None
@@ -165,6 +167,31 @@ def selectable_row(text, selected, locked=False):
     else:
         color = pygame.Color(settings.CREAM)
     return prefix + text, color
+
+
+def wipe_surface(progress):
+    """A hard-edged, blocky wipe panel: built on the small logical grid
+    (structural pixels, no antialiasing) and nearest-neighbor scaled up —
+    the same trick every other visual in this project uses, so a screen
+    transition reads as a chunky pixel-art swipe rather than a smooth
+    cross-fade. Shared by character_render.py's CHARACTER MENU entry/
+    exit and this module's own AFL HERO league-to-league transition
+    (see menu.update_menu) — one wipe technique for the whole project.
+
+    `progress` 0..1: 0 fully revealed (no panel drawn), 1 fully covered
+    (panel spans the whole logical width). Sweeps in from the left.
+    """
+    key = round(progress, 2)
+    if key not in _wipe_cache:
+        small = pygame.Surface((settings.LOGICAL_W, settings.LOGICAL_H),
+                               pygame.SRCALPHA)
+        edge = int(settings.LOGICAL_W * key)
+        if edge > 0:
+            pygame.draw.rect(small, pygame.Color(settings.INK),
+                             (0, 0, edge, settings.LOGICAL_H))
+        _wipe_cache[key] = pygame.transform.scale(
+            small, (settings.WINDOW_W, settings.WINDOW_H))
+    return _wipe_cache[key]
 
 
 def _draw_pixel_text(surface, text, x, y, color):
@@ -564,16 +591,34 @@ def _render_main_menu(display, game_state):
 
     title = font_big.render("AFL PROTOTYPE", True, cream)
     display.blit(title, (settings.WINDOW_W // 2 - title.get_width() // 2, 140))
-    sub = font_small.render("TOP-DOWN POSSESSION PLAY", True, muted)
+
+    # Subtitle carries context on the two AFL HERO screens — which
+    # league you're browsing, or that you're picking one — same spot
+    # the default tagline sits everywhere else.
+    if game_state.menu_screen == SCREEN_HERO_LEAGUES:
+        sub_text = "AFL HERO - PICK YOUR LEAGUE"
+    elif game_state.menu_screen == SCREEN_HERO:
+        league = hero_levels.HERO_LEAGUES[game_state.hero_league_index]
+        sub_text = f"{league['name']} · {league['tagline']}"
+    else:
+        sub_text = "TOP-DOWN POSSESSION PLAY"
+    sub = font_small.render(sub_text, True, muted)
     display.blit(sub, (settings.WINDOW_W // 2 - sub.get_width() // 2, 182))
 
-    # Options for the current screen (mirrors GameState._menu_options).
+    # Options for the current screen (mirrors menu.menu_options).
     if game_state.menu_screen == SCREEN_ROOT:
         entries = [(name, False, None) for name in ROOT_OPTIONS]
-    elif game_state.menu_screen == SCREEN_HERO:
-        entries = [(lv["name"], i >= game_state.hero_unlocked, lv["tagline"])
-                   for i, lv in enumerate(hero_levels.HERO_LEVELS)]
+    elif game_state.menu_screen == SCREEN_HERO_LEAGUES:
+        entries = [(lg["name"], hero_levels.LEAGUE_LEVEL_RANGE[i][0] >= game_state.hero_unlocked,
+                   lg["tagline"]) for i, lg in enumerate(hero_levels.HERO_LEAGUES)]
         entries.append(("BACK", False, None))
+    elif game_state.menu_screen == SCREEN_HERO:
+        # hero_league_rows already includes its own trailing BACK row
+        # (and, once cleared, GO TO THE LEAGUE / MORE LEAGUES COMING) —
+        # one shared table with menu.py's own dispatch, not appended
+        # again here (see that function's docstring).
+        entries = [(label, locked, tagline) for (label, locked, tagline, _kind)
+                   in menu.hero_league_rows(game_state, game_state.hero_league_index)]
     else:
         # Quarter folded into the tagline here too, so the picker itself
         # hints at match context before you even start (see levels.py's
@@ -663,3 +708,9 @@ def render(display, game_state):
     display.blit(_haze(), (0, 0))
     display.blit(_build_vignette(), (0, 0))
     _render_main_menu(display, game_state)
+
+    # AFL HERO's league-to-league swipe (see menu.update_menu) — drawn
+    # last, over everything else on this screen, same as the CHARACTER
+    # MENU's own wipe covers its whole frame.
+    if game_state.hero_transition_dir is not None:
+        display.blit(wipe_surface(game_state.hero_transition_progress), (0, 0))

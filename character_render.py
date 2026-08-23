@@ -18,8 +18,6 @@ import mechanics
 import render
 import settings
 
-_wipe_cache = {}   # rounded progress (0..1, 2dp) -> scaled wipe Surface
-
 ROW_H = 34
 GROUP_GAP = 16
 BAR_W = 110   # fillable stat-meter rectangle, right-aligned on a stat row
@@ -293,30 +291,6 @@ def _render_message(display, state):
     display.blit(text, (rect.x + 16, rect.y + 9))
 
 
-# ── Pixel-wipe transition ────────────────────────────────────────────
-
-def _wipe_surface(progress):
-    """A hard-edged, blocky wipe panel: built on the small logical grid
-    (structural pixels, no antialiasing) and nearest-neighbor scaled up —
-    the same trick every other visual in this project uses, so entry/exit
-    reads as a chunky pixel-art swipe rather than a smooth cross-fade.
-
-    `progress` 0..1: 0 fully revealed (no panel drawn), 1 fully covered
-    (panel spans the whole logical width). Sweeps in from the left.
-    """
-    key = round(progress, 2)
-    if key not in _wipe_cache:
-        small = pygame.Surface((settings.LOGICAL_W, settings.LOGICAL_H),
-                               pygame.SRCALPHA)
-        edge = int(settings.LOGICAL_W * key)
-        if edge > 0:
-            pygame.draw.rect(small, pygame.Color(settings.INK),
-                             (0, 0, edge, settings.LOGICAL_H))
-        _wipe_cache[key] = pygame.transform.scale(
-            small, (settings.WINDOW_W, settings.WINDOW_H))
-    return _wipe_cache[key]
-
-
 # ── Master compose ──────────────────────────────────────────────────
 
 def render_character(display, state):
@@ -344,4 +318,4 @@ def render_character(display, state):
 
     progress = mechanics.smoothstep(state.wipe_progress)
     if progress > 0.0:
-        display.blit(_wipe_surface(progress), (0, 0))
+        display.blit(render.wipe_surface(progress), (0, 0))

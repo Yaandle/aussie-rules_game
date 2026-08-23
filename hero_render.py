@@ -532,7 +532,14 @@ def _render_done(display, state):
 
     if state.result == "win":
         title_text, col = "POSSESSION WON", pygame.Color(settings.YELLOW)
-        has_next = state.level_index + 1 < len(hero_levels.HERO_LEVELS)
+        # Capped at the league boundary — clearing a league's last level
+        # never offers ENTER NEXT straight into the next league's level
+        # 1; see menu.update_hero's matching cap and SCREEN_HERO's GO TO
+        # THE LEAGUE row, the deliberate way tiers advance instead.
+        nxt = state.level_index + 1
+        has_next = (nxt < len(hero_levels.HERO_LEVELS)
+                   and hero_levels.LEVEL_LEAGUE_INDEX[nxt] ==
+                       hero_levels.LEVEL_LEAGUE_INDEX[state.level_index])
         prompts = ("ENTER NEXT · R RETRY · ESC MENU" if has_next
                    else "R RETRY · ESC MENU")
     else:

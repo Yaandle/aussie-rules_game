@@ -484,3 +484,11 @@ CHARACTER_HEIGHT_BASELINE_CM = 185.0
 # Pixel-wipe transition in/out of the menu (character_render.py) — short
 # and hard-edged, consistent with this game's chunky low-res look.
 CHARACTER_TRANSITION_TIME = 0.3   # seconds
+
+# Same wipe (render.wipe_surface), reused for AFL HERO's "GO TO THE
+# LEAGUE" transition between one league's level list and the next (see
+# menu.py's SCREEN_HERO/SCREEN_HERO_LEAGUES handling). Own knob rather
+# than reusing CHARACTER_TRANSITION_TIME directly, matching this
+# project's convention of independent per-mode constants even where
+# they start out equal.
+HERO_LEAGUE_TRANSITION_TIME = 0.3   # seconds, one leg (cover or reveal)

@@ -1,7 +1,7 @@
 """menu.py — root/scenario/hero menu navigation, the CHARACTER MENU
-hotkey flow, and the three submode update bridges (Hero/Goal Kicking/
-Character) that route a finished submode's exit_request back to a menu
-screen.
+hotkey flow, and the four submode update bridges (Hero/Goal Kicking/
+Character/the main menu itself) that route a finished submode's
+exit_request back to a menu screen.
 
 Split out of game_state.py to keep menu navigation and submode
 bridging in their own module — follows the same convention as
@@ -14,22 +14,67 @@ import pygame
 
 import hero_levels
 import levels
+import mechanics
+import settings
 from character_state import CharacterState
 from game_phases import (PHASE_CHARACTER, PHASE_MENU, ROOT_OPTIONS,
-                          SCREEN_HERO, SCREEN_ROOT, SCREEN_SCENARIOS)
+                          SCREEN_HERO, SCREEN_HERO_LEAGUES, SCREEN_ROOT,
+                          SCREEN_SCENARIOS)
 
 # ── Menu input ──────────────────────────────────────────────────────
 
+def hero_league_rows(game_state, league_index):
+    """Every selectable row for one league's level-list screen
+    (SCREEN_HERO), in display order: each of its levels, then — once
+    every level in the league is unlocked — either a GO TO THE LEAGUE
+    row (a next league exists) or a locked, inert MORE LEAGUES COMING
+    placeholder (there isn't a 7th league yet), then BACK.
+
+    One shared table rather than three separate ad-hoc lists, so
+    handle_menu_input/select_menu_option (dispatch) and render.py
+    (labels/locked state) can never drift out of sync on row count or
+    order — exactly the kind of thing that's easy to get subtly wrong
+    twice.
+
+    Each row: (label, locked, tagline, kind) — kind is "level" (select
+    to start it, only when not locked), "go_to_league" (select to
+    begin the swipe into the next league), "locked" (inert — a level
+    past hero_unlocked, or MORE LEAGUES COMING), or "back".
+    """
+    start, end = hero_levels.LEAGUE_LEVEL_RANGE[league_index]
+    rows = []
+    for flat_i in range(start, end):
+        lvl = hero_levels.HERO_LEVELS[flat_i]
+        locked = flat_i >= game_state.hero_unlocked
+        rows.append((lvl["name"], locked, lvl["tagline"],
+                    "locked" if locked else "level"))
+    if game_state.hero_unlocked > end:
+        if league_index + 1 < len(hero_levels.HERO_LEAGUES):
+            rows.append(("GO TO THE LEAGUE", False, None, "go_to_league"))
+        else:
+            rows.append(("MORE LEAGUES COMING", True, None, "locked"))
+    rows.append(("BACK", False, None, "back"))
+    return rows
+
+
 def menu_options(game_state):
-    """The entries on the current menu screen."""
+    """The entries on the current menu screen (labels only — see
+    hero_league_rows for SCREEN_HERO's fuller per-row detail)."""
     if game_state.menu_screen == SCREEN_ROOT:
         return list(ROOT_OPTIONS)
+    if game_state.menu_screen == SCREEN_HERO_LEAGUES:
+        return [lg["name"] for lg in hero_levels.HERO_LEAGUES] + ["BACK"]
     if game_state.menu_screen == SCREEN_HERO:
-        return [lv["name"] for lv in hero_levels.HERO_LEVELS] + ["BACK"]
+        return [row[0] for row in hero_league_rows(game_state, game_state.hero_league_index)]
     return [s["name"] for s in levels.SCENARIOS] + ["BACK"]
 
 
 def handle_menu_input(game_state, event):
+    # Frozen for the duration of the league-to-league swipe (see
+    # start_league_transition/update_menu) — same "input is suspended
+    # mid-transition" idea as CharacterState's own wipe.
+    if game_state.hero_transition_dir is not None:
+        return
     if event.type != pygame.KEYDOWN:
         return
     options = menu_options(game_state)
@@ -40,9 +85,13 @@ def handle_menu_input(game_state, event):
     elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
         select_menu_option(game_state)
     elif event.key == pygame.K_ESCAPE and game_state.menu_screen != SCREEN_ROOT:
-        back_index = 2 if game_state.menu_screen == SCREEN_HERO else 1
-        game_state.menu_screen = SCREEN_ROOT
-        game_state.menu_index = back_index
+        if game_state.menu_screen == SCREEN_HERO:
+            game_state.menu_screen = SCREEN_HERO_LEAGUES
+            game_state.menu_index = game_state.hero_league_index
+        else:
+            back_index = 2 if game_state.menu_screen == SCREEN_HERO_LEAGUES else 1
+            game_state.menu_screen = SCREEN_ROOT
+            game_state.menu_index = back_index
 
 
 def select_menu_option(game_state):
@@ -53,24 +102,57 @@ def select_menu_option(game_state):
             game_state.menu_screen = SCREEN_SCENARIOS
             game_state.menu_index = 0
         elif game_state.menu_index == 2:
-            game_state.menu_screen = SCREEN_HERO
+            game_state.menu_screen = SCREEN_HERO_LEAGUES
             game_state.menu_index = 0
         elif game_state.menu_index == 3:
             game_state.start_goal_kicking()
         else:
             pygame.event.post(pygame.event.Event(pygame.QUIT))
-    elif game_state.menu_screen == SCREEN_HERO:
-        if game_state.menu_index >= len(hero_levels.HERO_LEVELS):   # BACK
+
+    elif game_state.menu_screen == SCREEN_HERO_LEAGUES:
+        leagues = hero_levels.HERO_LEAGUES
+        if game_state.menu_index >= len(leagues):        # BACK
             game_state.menu_screen = SCREEN_ROOT
             game_state.menu_index = 2
-        elif game_state.menu_index < game_state.hero_unlocked:
-            game_state.start_hero(game_state.menu_index)
+            return
+        start, _ = hero_levels.LEAGUE_LEVEL_RANGE[game_state.menu_index]
+        if start < game_state.hero_unlocked:              # league reachable
+            game_state.hero_league_index = game_state.menu_index
+            game_state.menu_screen = SCREEN_HERO
+            game_state.menu_index = 0
+
+    elif game_state.menu_screen == SCREEN_HERO:
+        rows = hero_league_rows(game_state, game_state.hero_league_index)
+        _, locked, _, kind = rows[game_state.menu_index]
+        if kind == "level" and not locked:
+            start, _ = hero_levels.LEAGUE_LEVEL_RANGE[game_state.hero_league_index]
+            game_state.start_hero(start + game_state.menu_index)
+        elif kind == "go_to_league":
+            start_league_transition(game_state, game_state.hero_league_index + 1)
+        elif kind == "back":
+            game_state.menu_screen = SCREEN_HERO_LEAGUES
+            game_state.menu_index = game_state.hero_league_index
+        # kind == "locked" (a not-yet-unlocked level, or MORE LEAGUES
+        # COMING): inert, same as a locked scenario below.
+
     else:
         if game_state.menu_index >= len(levels.SCENARIOS):      # BACK entry
             game_state.menu_screen = SCREEN_ROOT
             game_state.menu_index = 1
         elif game_state.menu_index < game_state.unlocked:       # locked ones ignore
             game_state.start_scenario(game_state.menu_index)
+
+
+def start_league_transition(game_state, target_league):
+    """Begin the swipe from the current league's level list into
+    `target_league`'s (SCREEN_HERO's GO TO THE LEAGUE row). The actual
+    hero_league_index switch happens once the cover half finishes (see
+    update_menu below), not immediately — the swipe genuinely covers
+    the old list before the new one appears under it, rather than
+    cutting straight across."""
+    game_state.hero_transition_dir = "out"
+    game_state.hero_transition_t = 0.0
+    game_state.hero_transition_target = target_league
 
 
 # ── End-screen input ────────────────────────────────────────────────
@@ -137,6 +219,34 @@ def handle_character_input(game_state, event):
 
 # ── Submode update bridges ────────────────────────────────────────────
 
+def update_menu(game_state, dt):
+    """PHASE_MENU's per-frame work — today, only the AFL HERO league-
+    to-league swipe (see start_league_transition). A no-op the rest of
+    the time this phase is idle, which is most of the time; every
+    other menu screen stays fully static between inputs, same as
+    before this existed."""
+    if game_state.hero_transition_dir is None:
+        return
+    game_state.hero_transition_t = min(
+        settings.HERO_LEAGUE_TRANSITION_TIME, game_state.hero_transition_t + dt)
+    frac = game_state.hero_transition_t / settings.HERO_LEAGUE_TRANSITION_TIME
+    if game_state.hero_transition_dir == "out":
+        game_state.hero_transition_progress = mechanics.smoothstep(frac)
+        if game_state.hero_transition_t >= settings.HERO_LEAGUE_TRANSITION_TIME:
+            # Fully covered — swap the content underneath, then start
+            # revealing it.
+            game_state.hero_league_index = game_state.hero_transition_target
+            game_state.hero_transition_target = None
+            game_state.menu_index = 0
+            game_state.hero_transition_dir = "in"
+            game_state.hero_transition_t = 0.0
+    else:  # "in"
+        game_state.hero_transition_progress = mechanics.smoothstep(1.0 - frac)
+        if game_state.hero_transition_t >= settings.HERO_LEAGUE_TRANSITION_TIME:
+            game_state.hero_transition_dir = None
+            game_state.hero_transition_progress = 0.0
+
+
 def update_hero(game_state, dt):
     """Drive the active Hero level; harvest unlocks and exit requests."""
     if game_state.hero is None:
@@ -148,12 +258,26 @@ def update_hero(game_state, dt):
                                        game_state.hero.level_index + 2)
     request, game_state.hero.exit_request = game_state.hero.exit_request, None
     if request == "menu":
+        level_index = game_state.hero.level_index
+        league = hero_levels.LEVEL_LEAGUE_INDEX[level_index]
+        start, _ = hero_levels.LEAGUE_LEVEL_RANGE[league]
         game_state.phase = PHASE_MENU
         game_state.menu_screen = SCREEN_HERO
-        game_state.menu_index = game_state.hero.level_index
+        game_state.hero_league_index = league
+        game_state.menu_index = level_index - start
     elif request == "next":
+        # Capped at the league boundary: clearing a league's last
+        # level always routes back through the menu, where GO TO THE
+        # LEAGUE is the deliberate way to advance tiers, rather than
+        # ENTER silently carrying you across into the next league's
+        # level 1 (see hero_render._render_done's matching has_next
+        # cap, which keeps the win screen from even offering this in
+        # that case).
         nxt = game_state.hero.level_index + 1
-        if nxt < len(hero_levels.HERO_LEVELS) and nxt < game_state.hero_unlocked:
+        same_league = (nxt < len(hero_levels.HERO_LEVELS)
+                      and hero_levels.LEVEL_LEAGUE_INDEX[nxt] ==
+                          hero_levels.LEVEL_LEAGUE_INDEX[game_state.hero.level_index])
+        if same_league and nxt < game_state.hero_unlocked:
             game_state.start_hero(nxt)
 
 

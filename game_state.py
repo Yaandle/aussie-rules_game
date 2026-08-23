@@ -30,7 +30,7 @@ from entities import Ball, Player
 from game_phases import (MODE_AIMING_KICK, MODE_IDLE, PHASE_CHARACTER,
                           PHASE_END, PHASE_GOALKICK, PHASE_HERO,
                           PHASE_MENU, PHASE_PLAYING, ROOT_OPTIONS,
-                          SCREEN_HERO, SCREEN_ROOT)
+                          SCREEN_HERO, SCREEN_HERO_LEAGUES, SCREEN_ROOT)
 from goalkick_state import GoalKickState
 from hero_camera import HeroCamera
 from hero_state import HeroState
@@ -63,7 +63,19 @@ class GameState:
         self.menu_index = 0
         self.unlocked = 1                # how many scenarios are playable
         self.hero = None                 # active HeroState (AFL Hero mode)
-        self.hero_unlocked = 1           # how many hero levels are playable
+        self.hero_unlocked = 1           # how many hero levels are playable (flat,
+                                          # across every league — see hero_levels.py)
+        self.hero_league_index = 0       # which league SCREEN_HERO is currently
+                                          # showing the level list for (see menu.py)
+        # AFL HERO's league-to-league swipe (SCREEN_HERO's "GO TO THE
+        # LEAGUE" row) — None while idle, else "out" (covering) or "in"
+        # (revealing); mirrors CharacterState's transition_dir/_t as a
+        # couple of plain fields rather than a whole new class, since
+        # this never leaves PHASE_MENU. See menu.update_menu.
+        self.hero_transition_dir = None
+        self.hero_transition_t = 0.0
+        self.hero_transition_target = None   # league index to switch to once covered
+        self.hero_transition_progress = 0.0  # 0..1 wipe coverage, updated by menu.update_menu
         self.goalkick = None             # active GoalKickState (GOAL KICKING mode)
         self.character = None            # active CharacterState (CHARACTER MENU)
         self._pre_character_phase = None  # phase to restore on exit
@@ -345,6 +357,9 @@ class GameState:
             return
         if self.phase == PHASE_CHARACTER:
             menu.update_character(self, dt)
+            return
+        if self.phase == PHASE_MENU:
+            menu.update_menu(self, dt)
             return
         if self.phase != PHASE_PLAYING or self.show_menu:
             return
