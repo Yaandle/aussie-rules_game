@@ -174,9 +174,10 @@ def wipe_surface(progress):
     (structural pixels, no antialiasing) and nearest-neighbor scaled up —
     the same trick every other visual in this project uses, so a screen
     transition reads as a chunky pixel-art swipe rather than a smooth
-    cross-fade. Shared by character_render.py's CHARACTER MENU entry/
-    exit and this module's own AFL HERO league-to-league transition
-    (see menu.update_menu) — one wipe technique for the whole project.
+    cross-fade. Lives here (rather than as a character_render.py
+    private helper) so any other screen transition can reuse the same
+    technique without a second copy — currently just
+    character_render.py's CHARACTER MENU entry/exit.
 
     `progress` 0..1: 0 fully revealed (no panel drawn), 1 fully covered
     (panel spans the whole logical width). Sweeps in from the left.
@@ -581,6 +582,46 @@ def _slowmo():
     return _slowmo_overlay
 
 
+# ── AFL HERO's NEW badge (red-on-yellow — the game's own team colors,
+#    deliberately breaking from every other row's charcoal/cream look
+#    so unseen content reads as something waiting for you, not just
+#    another menu line) ─────────────────────────────────────────────
+
+def _draw_new_badge(display, x, y):
+    """Small pill flagging a league that's freshly reachable but not
+    yet started (see menu.hero_league_is_new) — tags an otherwise
+    ordinary, already-selectable SCREEN_HERO_LEAGUES row. Smaller than
+    _render_new_row's own button since this one's a tag on a row, not
+    a row unto itself."""
+    _, font_small, _ = _fonts()
+    label = font_small.render("NEW", True, pygame.Color(settings.RED))
+    pad_x, pad_y = 6, 2
+    rect = pygame.Rect(x, y, label.get_width() + pad_x * 2, label.get_height() + pad_y * 2)
+    pygame.draw.rect(display, pygame.Color(settings.YELLOW), rect, border_radius=3)
+    display.blit(label, (rect.x + pad_x, rect.y + pad_y))
+
+
+def _render_new_row(display, label_text, selected, y):
+    """SCREEN_HERO's own attention-grabbing row once a league is fully
+    cleared — a solid red-on-yellow pill instead of ordinary cream/
+    gold list text, so it reads as something waiting for you
+    regardless of where the cursor happens to be, not just another
+    option to scroll past. Selecting it returns to the league picker
+    with the cursor already on the newly unlocked league (see
+    menu.py's "new_league" row kind), which carries its own smaller
+    NEW tag via _draw_new_badge above."""
+    font, _, _ = _fonts()
+    text = font.render(label_text, True, pygame.Color(settings.RED))
+    pad_x, pad_y = 10, 4
+    x = settings.WINDOW_W // 2 - 140
+    rect = pygame.Rect(x - pad_x, y - pad_y, text.get_width() + pad_x * 2,
+                       text.get_height() + pad_y * 2)
+    pygame.draw.rect(display, pygame.Color(settings.YELLOW), rect, border_radius=4)
+    if selected:
+        pygame.draw.rect(display, pygame.Color(settings.INK), rect, 2, border_radius=4)
+    display.blit(text, (x, y))
+
+
 def _render_main_menu(display, game_state):
     """Title and mode select, floating over the quiet empty oval."""
     font, font_small, font_big = _fonts()
@@ -605,19 +646,30 @@ def _render_main_menu(display, game_state):
     sub = font_small.render(sub_text, True, muted)
     display.blit(sub, (settings.WINDOW_W // 2 - sub.get_width() // 2, 182))
 
-    # Options for the current screen (mirrors menu.menu_options).
+    # Options for the current screen (mirrors menu.menu_options). Each
+    # entry is (name, locked, tagline, badge) — badge is None on every
+    # screen except AFL HERO's two: "new_row" renders the WHOLE row as
+    # the red/yellow NEW button (SCREEN_HERO, once a league is
+    # cleared); "new_tag" appends a smaller matching pill after an
+    # otherwise ordinary row's text (SCREEN_HERO_LEAGUES, a league
+    # that's freshly reachable but not yet started — see
+    # menu.hero_league_is_new).
     if game_state.menu_screen == SCREEN_ROOT:
-        entries = [(name, False, None) for name in ROOT_OPTIONS]
+        entries = [(name, False, None, None) for name in ROOT_OPTIONS]
     elif game_state.menu_screen == SCREEN_HERO_LEAGUES:
-        entries = [(lg["name"], hero_levels.LEAGUE_LEVEL_RANGE[i][0] >= game_state.hero_unlocked,
-                   lg["tagline"]) for i, lg in enumerate(hero_levels.HERO_LEAGUES)]
-        entries.append(("BACK", False, None))
+        entries = []
+        for i, lg in enumerate(hero_levels.HERO_LEAGUES):
+            locked = hero_levels.LEAGUE_LEVEL_RANGE[i][0] >= game_state.hero_unlocked
+            badge = "new_tag" if (not locked and menu.hero_league_is_new(game_state, i)) else None
+            entries.append((lg["name"], locked, lg["tagline"], badge))
+        entries.append(("BACK", False, None, None))
     elif game_state.menu_screen == SCREEN_HERO:
         # hero_league_rows already includes its own trailing BACK row
-        # (and, once cleared, GO TO THE LEAGUE / MORE LEAGUES COMING) —
-        # one shared table with menu.py's own dispatch, not appended
-        # again here (see that function's docstring).
-        entries = [(label, locked, tagline) for (label, locked, tagline, _kind)
+        # (and, once cleared, NEW / MORE LEAGUES COMING) — one shared
+        # table with menu.py's own dispatch, not appended again here
+        # (see that function's docstring).
+        entries = [(label, locked, tagline, "new_row" if kind == "new_league" else None)
+                   for (label, locked, tagline, kind)
                    in menu.hero_league_rows(game_state, game_state.hero_league_index)]
     else:
         # Quarter folded into the tagline here too, so the picker itself
@@ -625,21 +677,26 @@ def _render_main_menu(display, game_state):
         # quarter/situation fields and field_render's in-play HUD, which
         # carries the same context through the whole scenario).
         entries = [(s["name"], i >= game_state.unlocked,
-                   f"{s.get('quarter', '')} · {s['tagline']}".strip(" ·"))
+                   f"{s.get('quarter', '')} · {s['tagline']}".strip(" ·"), None)
                    for i, s in enumerate(levels.SCENARIOS)]
-        entries.append(("BACK", False, None))
+        entries.append(("BACK", False, None, None))
 
     y = 280
-    for i, (name, locked, tagline) in enumerate(entries):
+    for i, (name, locked, tagline, badge) in enumerate(entries):
         selected = i == game_state.menu_index
-        label_text = name + ("  · LOCKED" if locked else "")
-        text, color = selectable_row(label_text, selected, locked)
-        label = font.render(text, True, color)
-        display.blit(label, (settings.WINDOW_W // 2 - 140, y))
-        if selected and tagline and not locked:
-            tip = font_small.render(tagline, True, muted)
-            display.blit(tip, (settings.WINDOW_W // 2 - 132, y + 24))
-            y += 22
+        if badge == "new_row":
+            _render_new_row(display, name, selected, y)
+        else:
+            label_text = name + ("  · LOCKED" if locked else "")
+            text, color = selectable_row(label_text, selected, locked)
+            label = font.render(text, True, color)
+            display.blit(label, (settings.WINDOW_W // 2 - 140, y))
+            if badge == "new_tag":
+                _draw_new_badge(display, settings.WINDOW_W // 2 - 140 + label.get_width() + 10, y + 3)
+            if selected and tagline and not locked:
+                tip = font_small.render(tagline, True, muted)
+                display.blit(tip, (settings.WINDOW_W // 2 - 132, y + 24))
+                y += 22
         y += 44
 
     footer = font_small.render(
@@ -708,9 +765,3 @@ def render(display, game_state):
     display.blit(_haze(), (0, 0))
     display.blit(_build_vignette(), (0, 0))
     _render_main_menu(display, game_state)
-
-    # AFL HERO's league-to-league swipe (see menu.update_menu) — drawn
-    # last, over everything else on this screen, same as the CHARACTER
-    # MENU's own wipe covers its whole frame.
-    if game_state.hero_transition_dir is not None:
-        display.blit(wipe_surface(game_state.hero_transition_progress), (0, 0))
