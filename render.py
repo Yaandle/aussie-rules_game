@@ -20,8 +20,9 @@ import pygame
 import controller
 import hero_levels
 import levels
+import menu
 import settings
-from game_state import ROOT_OPTIONS, SCREEN_HERO, SCREEN_ROOT
+from game_state import ROOT_OPTIONS, SCREEN_HERO, SCREEN_HERO_LEAGUES, SCREEN_ROOT
 
 # ── Module-level caches (built lazily, once) ────────────────────────
 _bg_scaled = None
@@ -29,6 +30,7 @@ _glow_cache = {}
 _vignette = None
 _haze_overlay = None
 _slowmo_overlay = None
+_wipe_cache = {}   # rounded progress (0..1, 2dp) -> scaled wipe Surface
 _font = None
 _font_small = None
 _font_big = None
@@ -165,6 +167,32 @@ def selectable_row(text, selected, locked=False):
     else:
         color = pygame.Color(settings.CREAM)
     return prefix + text, color
+
+
+def wipe_surface(progress):
+    """A hard-edged, blocky wipe panel: built on the small logical grid
+    (structural pixels, no antialiasing) and nearest-neighbor scaled up —
+    the same trick every other visual in this project uses, so a screen
+    transition reads as a chunky pixel-art swipe rather than a smooth
+    cross-fade. Lives here (rather than as a character_render.py
+    private helper) so any other screen transition can reuse the same
+    technique without a second copy — currently just
+    character_render.py's CHARACTER MENU entry/exit.
+
+    `progress` 0..1: 0 fully revealed (no panel drawn), 1 fully covered
+    (panel spans the whole logical width). Sweeps in from the left.
+    """
+    key = round(progress, 2)
+    if key not in _wipe_cache:
+        small = pygame.Surface((settings.LOGICAL_W, settings.LOGICAL_H),
+                               pygame.SRCALPHA)
+        edge = int(settings.LOGICAL_W * key)
+        if edge > 0:
+            pygame.draw.rect(small, pygame.Color(settings.INK),
+                             (0, 0, edge, settings.LOGICAL_H))
+        _wipe_cache[key] = pygame.transform.scale(
+            small, (settings.WINDOW_W, settings.WINDOW_H))
+    return _wipe_cache[key]
 
 
 def _draw_pixel_text(surface, text, x, y, color):
@@ -483,6 +511,21 @@ def _draw_player_sprite(surface, x, y, team, walking, walk_frame, variant=0):
         surface.set_at((x + 1, y + 4), boot)
 
 
+def window_icon():
+    """A window/taskbar icon built from the same chibi sprite and
+    nearest-neighbor upscale technique as every other visual in this
+    project, instead of shipping a separate .ico image asset — keeps
+    the "no image assets, ever" rule intact. Call once at startup,
+    before pygame.display.set_mode (see main.py)."""
+    base = pygame.Surface((7, 12), pygame.SRCALPHA)
+    _draw_player_sprite(base, 3, 6, settings.YELLOW, False, 0, variant=0)
+    scale = 4
+    sprite = pygame.transform.scale(base, (7 * scale, 12 * scale))
+    icon = pygame.Surface((12 * scale, 12 * scale), pygame.SRCALPHA)
+    icon.blit(sprite, ((icon.get_width() - sprite.get_width()) // 2, 0))
+    return icon
+
+
 # ── Scoreboards & HUD (display resolution) ──────────────────────────
 
 def _render_menu(display):
@@ -539,6 +582,43 @@ def _slowmo():
     return _slowmo_overlay
 
 
+# ── AFL HERO's NEW sticker ───────────────────────────────────────────
+
+_new_icon_surf = None
+
+
+def _new_icon():
+    """A tiny hard-edged pixel sticker flagging unseen AFL HERO
+    content — bold yellow badge, thick ink border, a flat offset
+    shadow with no blur (unlike every other shadow in this project —
+    see _soft_shadow — deliberately, for the "stuck-on sticker" read)
+    and a red exclamation mark rather than rendered text. Built once
+    on the small logical grid and nearest-neighbor scaled up, the same
+    trick every other visual here uses, then cached like _build_
+    vignette/wipe_surface.
+
+    Purely decorative — small enough to read as an icon, not a
+    button. Never its own row, never selectable: render.py just blits
+    it next to whichever row it's flagging (SCREEN_HERO's BACK row
+    once menu.hero_league_just_cleared, or a league's own row on
+    SCREEN_HERO_LEAGUES once menu.hero_league_is_new)."""
+    global _new_icon_surf
+    if _new_icon_surf is not None:
+        return _new_icon_surf
+    size, shadow_off, scale = 8, 2, 2
+    small = pygame.Surface((size + shadow_off, size + shadow_off), pygame.SRCALPHA)
+    pygame.draw.rect(small, pygame.Color(settings.INK),
+                     (shadow_off, shadow_off, size, size))          # hard shadow
+    pygame.draw.rect(small, pygame.Color(settings.YELLOW), (0, 0, size, size))
+    pygame.draw.rect(small, pygame.Color(settings.INK), (0, 0, size, size), 1)
+    red = pygame.Color(settings.RED)
+    small.fill(red, (3, 2, 2, 3))     # "!" stem
+    small.fill(red, (3, 6, 2, 1))     # "!" dot
+    _new_icon_surf = pygame.transform.scale(
+        small, ((size + shadow_off) * scale, (size + shadow_off) * scale))
+    return _new_icon_surf
+
+
 def _render_main_menu(display, game_state):
     """Title and mode select, floating over the quiet empty oval."""
     font, font_small, font_big = _fonts()
@@ -549,33 +629,69 @@ def _render_main_menu(display, game_state):
 
     title = font_big.render("AFL PROTOTYPE", True, cream)
     display.blit(title, (settings.WINDOW_W // 2 - title.get_width() // 2, 140))
-    sub = font_small.render("TOP-DOWN POSSESSION PLAY", True, muted)
+
+    # Subtitle carries context on the two AFL HERO screens — which
+    # league you're browsing, or that you're picking one — same spot
+    # the default tagline sits everywhere else.
+    if game_state.menu_screen == SCREEN_HERO_LEAGUES:
+        sub_text = "AFL HERO - PICK YOUR LEAGUE"
+    elif game_state.menu_screen == SCREEN_HERO:
+        league = hero_levels.HERO_LEAGUES[game_state.hero_league_index]
+        sub_text = f"{league['name']} · {league['tagline']}"
+    else:
+        sub_text = "TOP-DOWN POSSESSION PLAY"
+    sub = font_small.render(sub_text, True, muted)
     display.blit(sub, (settings.WINDOW_W // 2 - sub.get_width() // 2, 182))
 
-    # Options for the current screen (mirrors GameState._menu_options).
+    # Options for the current screen (mirrors menu.menu_options). Each
+    # entry is (name, locked, tagline, show_new_icon) — show_new_icon
+    # is only ever True on AFL HERO's two screens: a league's own row
+    # on SCREEN_HERO_LEAGUES once it's freshly reachable but not yet
+    # started (menu.hero_league_is_new), or SCREEN_HERO's BACK row
+    # once the current league is fully cleared (menu.
+    # hero_league_just_cleared). Purely a decoration on that row's
+    # normal rendering below — see _new_icon's own docstring for why
+    # this is deliberately not a distinct row/button.
     if game_state.menu_screen == SCREEN_ROOT:
-        entries = [(name, False, None) for name in ROOT_OPTIONS]
+        entries = [(name, False, None, False) for name in ROOT_OPTIONS]
+    elif game_state.menu_screen == SCREEN_HERO_LEAGUES:
+        entries = []
+        for i, lg in enumerate(hero_levels.HERO_LEAGUES):
+            locked = hero_levels.LEAGUE_LEVEL_RANGE[i][0] >= game_state.hero_unlocked
+            show_icon = not locked and menu.hero_league_is_new(game_state, i)
+            entries.append((lg["name"], locked, lg["tagline"], show_icon))
+        entries.append(("BACK", False, None, False))
     elif game_state.menu_screen == SCREEN_HERO:
-        entries = [(lv["name"], i >= game_state.hero_unlocked, lv["tagline"])
-                   for i, lv in enumerate(hero_levels.HERO_LEVELS)]
-        entries.append(("BACK", False, None))
+        # hero_league_rows already includes its own trailing BACK row
+        # (and, once cleared with no next league, MORE LEAGUES COMING)
+        # — one shared table with menu.py's own dispatch, not appended
+        # again here (see that function's docstring). BACK is always
+        # last, so the sticker flag only ever needs setting there.
+        entries = [(label, locked, tagline, False) for (label, locked, tagline, _kind)
+                   in menu.hero_league_rows(game_state, game_state.hero_league_index)]
+        if menu.hero_league_just_cleared(game_state, game_state.hero_league_index):
+            name, locked, tagline, _ = entries[-1]
+            entries[-1] = (name, locked, tagline, True)
     else:
         # Quarter folded into the tagline here too, so the picker itself
         # hints at match context before you even start (see levels.py's
         # quarter/situation fields and field_render's in-play HUD, which
         # carries the same context through the whole scenario).
         entries = [(s["name"], i >= game_state.unlocked,
-                   f"{s.get('quarter', '')} · {s['tagline']}".strip(" ·"))
+                   f"{s.get('quarter', '')} · {s['tagline']}".strip(" ·"), False)
                    for i, s in enumerate(levels.SCENARIOS)]
-        entries.append(("BACK", False, None))
+        entries.append(("BACK", False, None, False))
 
     y = 280
-    for i, (name, locked, tagline) in enumerate(entries):
+    for i, (name, locked, tagline, show_icon) in enumerate(entries):
         selected = i == game_state.menu_index
         label_text = name + ("  · LOCKED" if locked else "")
         text, color = selectable_row(label_text, selected, locked)
         label = font.render(text, True, color)
         display.blit(label, (settings.WINDOW_W // 2 - 140, y))
+        if show_icon:
+            display.blit(_new_icon(),
+                         (settings.WINDOW_W // 2 - 140 + label.get_width() + 10, y - 6))
         if selected and tagline and not locked:
             tip = font_small.render(tagline, True, muted)
             display.blit(tip, (settings.WINDOW_W // 2 - 132, y + 24))
@@ -613,7 +729,8 @@ def _render_end(display, game_state):
         prompts = "R RETRY · ESC MENU"
     else:
         title_text, title_col = "FULL TIME", cream
-        context = f"FINAL SCORE   HOME {game_state.yellow_points:02d} - AWAY 00"
+        context = (f"FINAL SCORE   HOME {game_state.yellow_points:02d} "
+                   f"- AWAY {game_state.opp_points:02d}")
         prompts = "R REPLAY · ESC MENU"
 
     title = font_big.render(title_text, True, title_col)

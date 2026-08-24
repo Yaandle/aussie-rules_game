@@ -11,8 +11,8 @@ draws anything itself (render.py reads from it instead).
 Setup/loading and phase-machine dispatch live here; menu navigation
 (menu.py), the frame-by-frame update loop and player actions
 (gameplay.py), and possession/score/contest resolution (outcomes.py)
-are split into their own modules — see AUDIT.md's game_state.py
-decomposition. Every one of those modules follows the same convention
+are split into their own modules, each self-contained around one
+concern. Every one of those modules follows the same convention
 mechanics.py/possession.py/ai_control.py already use: functions take
 the owning GameState as their first argument rather than being methods.
 """
@@ -30,7 +30,7 @@ from entities import Ball, Player
 from game_phases import (MODE_AIMING_KICK, MODE_IDLE, PHASE_CHARACTER,
                           PHASE_END, PHASE_GOALKICK, PHASE_HERO,
                           PHASE_MENU, PHASE_PLAYING, ROOT_OPTIONS,
-                          SCREEN_HERO, SCREEN_ROOT)
+                          SCREEN_HERO, SCREEN_HERO_LEAGUES, SCREEN_ROOT)
 from goalkick_state import GoalKickState
 from hero_camera import HeroCamera
 from hero_state import HeroState
@@ -63,7 +63,10 @@ class GameState:
         self.menu_index = 0
         self.unlocked = 1                # how many scenarios are playable
         self.hero = None                 # active HeroState (AFL Hero mode)
-        self.hero_unlocked = 1           # how many hero levels are playable
+        self.hero_unlocked = 1           # how many hero levels are playable (flat,
+                                          # across every league — see hero_levels.py)
+        self.hero_league_index = 0       # which league SCREEN_HERO is currently
+                                          # showing the level list for (see menu.py)
         self.goalkick = None             # active GoalKickState (GOAL KICKING mode)
         self.character = None            # active CharacterState (CHARACTER MENU)
         self._pre_character_phase = None  # phase to restore on exit
@@ -258,6 +261,16 @@ class GameState:
     @property
     def yellow_points(self):
         return self.score["goals"] * 6 + self.score["behinds"]
+
+    @property
+    def opp_points(self):
+        """The AI's score — outcomes.apply_score tracks it under
+        "opp_goals"/"opp_behinds" whenever a RED shot lands, but FULL
+        GAME's own kickoff carries no such thing as a fixed narrative
+        score the way a scenario's away_score_start does, so this is
+        the one place that total gets computed for display (see
+        field_render's HUD and render._render_end's FULL TIME line)."""
+        return self.score.get("opp_goals", 0) * 6 + self.score.get("opp_behinds", 0)
 
     @property
     def must_bounce(self):

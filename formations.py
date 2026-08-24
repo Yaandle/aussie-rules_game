@@ -1,7 +1,7 @@
 """formations.py — FULL GAME's programmatic kickoff layout.
 
 Pure data and geometry, no GameState coupling — split out of
-game_state.py as part of the game_state.py decomposition (see AUDIT.md).
+game_state.py to keep this concern separate from mutable game state.
 """
 
 import math

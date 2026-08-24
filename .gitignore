@@ -28,3 +28,8 @@ htmlcov/
 # ── OS cruft ──────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Local save data ─────────────────────────────────────────────────
+# player_data.py handles a missing file gracefully (fresh install = no
+# saves), so this is never shipped/tracked — it's local player data.
+player_saves.json
