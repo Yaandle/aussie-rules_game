@@ -67,15 +67,6 @@ class GameState:
                                           # across every league — see hero_levels.py)
         self.hero_league_index = 0       # which league SCREEN_HERO is currently
                                           # showing the level list for (see menu.py)
-        # AFL HERO's league-to-league swipe (SCREEN_HERO's "GO TO THE
-        # LEAGUE" row) — None while idle, else "out" (covering) or "in"
-        # (revealing); mirrors CharacterState's transition_dir/_t as a
-        # couple of plain fields rather than a whole new class, since
-        # this never leaves PHASE_MENU. See menu.update_menu.
-        self.hero_transition_dir = None
-        self.hero_transition_t = 0.0
-        self.hero_transition_target = None   # league index to switch to once covered
-        self.hero_transition_progress = 0.0  # 0..1 wipe coverage, updated by menu.update_menu
         self.goalkick = None             # active GoalKickState (GOAL KICKING mode)
         self.character = None            # active CharacterState (CHARACTER MENU)
         self._pre_character_phase = None  # phase to restore on exit
@@ -357,9 +348,6 @@ class GameState:
             return
         if self.phase == PHASE_CHARACTER:
             menu.update_character(self, dt)
-            return
-        if self.phase == PHASE_MENU:
-            menu.update_menu(self, dt)
             return
         if self.phase != PHASE_PLAYING or self.show_menu:
             return
