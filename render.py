@@ -582,44 +582,41 @@ def _slowmo():
     return _slowmo_overlay
 
 
-# ── AFL HERO's NEW badge (red-on-yellow — the game's own team colors,
-#    deliberately breaking from every other row's charcoal/cream look
-#    so unseen content reads as something waiting for you, not just
-#    another menu line) ─────────────────────────────────────────────
+# ── AFL HERO's NEW sticker ───────────────────────────────────────────
 
-def _draw_new_badge(display, x, y):
-    """Small pill flagging a league that's freshly reachable but not
-    yet started (see menu.hero_league_is_new) — tags an otherwise
-    ordinary, already-selectable SCREEN_HERO_LEAGUES row. Smaller than
-    _render_new_row's own button since this one's a tag on a row, not
-    a row unto itself."""
-    _, font_small, _ = _fonts()
-    label = font_small.render("NEW", True, pygame.Color(settings.RED))
-    pad_x, pad_y = 6, 2
-    rect = pygame.Rect(x, y, label.get_width() + pad_x * 2, label.get_height() + pad_y * 2)
-    pygame.draw.rect(display, pygame.Color(settings.YELLOW), rect, border_radius=3)
-    display.blit(label, (rect.x + pad_x, rect.y + pad_y))
+_new_icon_surf = None
 
 
-def _render_new_row(display, label_text, selected, y):
-    """SCREEN_HERO's own attention-grabbing row once a league is fully
-    cleared — a solid red-on-yellow pill instead of ordinary cream/
-    gold list text, so it reads as something waiting for you
-    regardless of where the cursor happens to be, not just another
-    option to scroll past. Selecting it returns to the league picker
-    with the cursor already on the newly unlocked league (see
-    menu.py's "new_league" row kind), which carries its own smaller
-    NEW tag via _draw_new_badge above."""
-    font, _, _ = _fonts()
-    text = font.render(label_text, True, pygame.Color(settings.RED))
-    pad_x, pad_y = 10, 4
-    x = settings.WINDOW_W // 2 - 140
-    rect = pygame.Rect(x - pad_x, y - pad_y, text.get_width() + pad_x * 2,
-                       text.get_height() + pad_y * 2)
-    pygame.draw.rect(display, pygame.Color(settings.YELLOW), rect, border_radius=4)
-    if selected:
-        pygame.draw.rect(display, pygame.Color(settings.INK), rect, 2, border_radius=4)
-    display.blit(text, (x, y))
+def _new_icon():
+    """A tiny hard-edged pixel sticker flagging unseen AFL HERO
+    content — bold yellow badge, thick ink border, a flat offset
+    shadow with no blur (unlike every other shadow in this project —
+    see _soft_shadow — deliberately, for the "stuck-on sticker" read)
+    and a red exclamation mark rather than rendered text. Built once
+    on the small logical grid and nearest-neighbor scaled up, the same
+    trick every other visual here uses, then cached like _build_
+    vignette/wipe_surface.
+
+    Purely decorative — small enough to read as an icon, not a
+    button. Never its own row, never selectable: render.py just blits
+    it next to whichever row it's flagging (SCREEN_HERO's BACK row
+    once menu.hero_league_just_cleared, or a league's own row on
+    SCREEN_HERO_LEAGUES once menu.hero_league_is_new)."""
+    global _new_icon_surf
+    if _new_icon_surf is not None:
+        return _new_icon_surf
+    size, shadow_off, scale = 8, 2, 2
+    small = pygame.Surface((size + shadow_off, size + shadow_off), pygame.SRCALPHA)
+    pygame.draw.rect(small, pygame.Color(settings.INK),
+                     (shadow_off, shadow_off, size, size))          # hard shadow
+    pygame.draw.rect(small, pygame.Color(settings.YELLOW), (0, 0, size, size))
+    pygame.draw.rect(small, pygame.Color(settings.INK), (0, 0, size, size), 1)
+    red = pygame.Color(settings.RED)
+    small.fill(red, (3, 2, 2, 3))     # "!" stem
+    small.fill(red, (3, 6, 2, 1))     # "!" dot
+    _new_icon_surf = pygame.transform.scale(
+        small, ((size + shadow_off) * scale, (size + shadow_off) * scale))
+    return _new_icon_surf
 
 
 def _render_main_menu(display, game_state):
@@ -647,56 +644,58 @@ def _render_main_menu(display, game_state):
     display.blit(sub, (settings.WINDOW_W // 2 - sub.get_width() // 2, 182))
 
     # Options for the current screen (mirrors menu.menu_options). Each
-    # entry is (name, locked, tagline, badge) — badge is None on every
-    # screen except AFL HERO's two: "new_row" renders the WHOLE row as
-    # the red/yellow NEW button (SCREEN_HERO, once a league is
-    # cleared); "new_tag" appends a smaller matching pill after an
-    # otherwise ordinary row's text (SCREEN_HERO_LEAGUES, a league
-    # that's freshly reachable but not yet started — see
-    # menu.hero_league_is_new).
+    # entry is (name, locked, tagline, show_new_icon) — show_new_icon
+    # is only ever True on AFL HERO's two screens: a league's own row
+    # on SCREEN_HERO_LEAGUES once it's freshly reachable but not yet
+    # started (menu.hero_league_is_new), or SCREEN_HERO's BACK row
+    # once the current league is fully cleared (menu.
+    # hero_league_just_cleared). Purely a decoration on that row's
+    # normal rendering below — see _new_icon's own docstring for why
+    # this is deliberately not a distinct row/button.
     if game_state.menu_screen == SCREEN_ROOT:
-        entries = [(name, False, None, None) for name in ROOT_OPTIONS]
+        entries = [(name, False, None, False) for name in ROOT_OPTIONS]
     elif game_state.menu_screen == SCREEN_HERO_LEAGUES:
         entries = []
         for i, lg in enumerate(hero_levels.HERO_LEAGUES):
             locked = hero_levels.LEAGUE_LEVEL_RANGE[i][0] >= game_state.hero_unlocked
-            badge = "new_tag" if (not locked and menu.hero_league_is_new(game_state, i)) else None
-            entries.append((lg["name"], locked, lg["tagline"], badge))
-        entries.append(("BACK", False, None, None))
+            show_icon = not locked and menu.hero_league_is_new(game_state, i)
+            entries.append((lg["name"], locked, lg["tagline"], show_icon))
+        entries.append(("BACK", False, None, False))
     elif game_state.menu_screen == SCREEN_HERO:
         # hero_league_rows already includes its own trailing BACK row
-        # (and, once cleared, NEW / MORE LEAGUES COMING) — one shared
-        # table with menu.py's own dispatch, not appended again here
-        # (see that function's docstring).
-        entries = [(label, locked, tagline, "new_row" if kind == "new_league" else None)
-                   for (label, locked, tagline, kind)
+        # (and, once cleared with no next league, MORE LEAGUES COMING)
+        # — one shared table with menu.py's own dispatch, not appended
+        # again here (see that function's docstring). BACK is always
+        # last, so the sticker flag only ever needs setting there.
+        entries = [(label, locked, tagline, False) for (label, locked, tagline, _kind)
                    in menu.hero_league_rows(game_state, game_state.hero_league_index)]
+        if menu.hero_league_just_cleared(game_state, game_state.hero_league_index):
+            name, locked, tagline, _ = entries[-1]
+            entries[-1] = (name, locked, tagline, True)
     else:
         # Quarter folded into the tagline here too, so the picker itself
         # hints at match context before you even start (see levels.py's
         # quarter/situation fields and field_render's in-play HUD, which
         # carries the same context through the whole scenario).
         entries = [(s["name"], i >= game_state.unlocked,
-                   f"{s.get('quarter', '')} · {s['tagline']}".strip(" ·"), None)
+                   f"{s.get('quarter', '')} · {s['tagline']}".strip(" ·"), False)
                    for i, s in enumerate(levels.SCENARIOS)]
-        entries.append(("BACK", False, None, None))
+        entries.append(("BACK", False, None, False))
 
     y = 280
-    for i, (name, locked, tagline, badge) in enumerate(entries):
+    for i, (name, locked, tagline, show_icon) in enumerate(entries):
         selected = i == game_state.menu_index
-        if badge == "new_row":
-            _render_new_row(display, name, selected, y)
-        else:
-            label_text = name + ("  · LOCKED" if locked else "")
-            text, color = selectable_row(label_text, selected, locked)
-            label = font.render(text, True, color)
-            display.blit(label, (settings.WINDOW_W // 2 - 140, y))
-            if badge == "new_tag":
-                _draw_new_badge(display, settings.WINDOW_W // 2 - 140 + label.get_width() + 10, y + 3)
-            if selected and tagline and not locked:
-                tip = font_small.render(tagline, True, muted)
-                display.blit(tip, (settings.WINDOW_W // 2 - 132, y + 24))
-                y += 22
+        label_text = name + ("  · LOCKED" if locked else "")
+        text, color = selectable_row(label_text, selected, locked)
+        label = font.render(text, True, color)
+        display.blit(label, (settings.WINDOW_W // 2 - 140, y))
+        if show_icon:
+            display.blit(_new_icon(),
+                         (settings.WINDOW_W // 2 - 140 + label.get_width() + 10, y - 6))
+        if selected and tagline and not locked:
+            tip = font_small.render(tagline, True, muted)
+            display.blit(tip, (settings.WINDOW_W // 2 - 132, y + 24))
+            y += 22
         y += 44
 
     footer = font_small.render(
