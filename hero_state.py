@@ -1,4 +1,4 @@
-"""hero_state.py — AFL Hero mode: every possession is a puzzle.
+"""hero_state.py — Aussie Rules Hero mode: every possession is a puzzle.
 
 One HeroState instance runs one level: receive the ball, slow the world,
 draw a decision (run / handball / kick) with the mouse, then watch it
@@ -36,7 +36,7 @@ _KICK_BUTTON = 1     # left-drag draws a handball / kick
 
 
 class HeroState:
-    """Single source of truth for one AFL Hero level attempt."""
+    """Single source of truth for one Aussie Rules Hero level attempt."""
 
     def __init__(self, index):
         self.level_index = index

@@ -1,4 +1,4 @@
-"""hero_levels.py — AFL Hero mode levels and leagues (data only).
+"""hero_levels.py — Aussie Rules Hero mode levels and leagues (data only).
 
 Each level is one possession treated as a puzzle: fixed starting
 positions, an objective, a clock, and a defensive setup to unpick.

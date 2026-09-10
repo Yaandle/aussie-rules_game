@@ -1,13 +1,13 @@
 """field_render.py — diorama presentation for FULL GAME and SCENARIOS.
 
-The two classic modes now share AFL Hero's look: the same pastel
+The two classic modes now share Aussie Rules Hero's look: the same pastel
 field-level scene, projected through GameState's own HeroCamera, with
 the same billboarded chibi sprites. Mechanics and keyboard controls are
 untouched — this module only draws.
 
 It reuses hero_render's cached scene and sprite helpers (read-only) and
 render.py's screen-space overlays (slow-mo, flash, end screen, controls
-menu), leaving all AFL Hero code unaltered. Never mutates game state.
+    menu), leaving all Aussie Rules Hero code unaltered. Never mutates game state.
 """
 
 import pygame

@@ -62,7 +62,7 @@ class GameState:
         self.menu_screen = SCREEN_ROOT
         self.menu_index = 0
         self.unlocked = 1                # how many scenarios are playable
-        self.hero = None                 # active HeroState (AFL Hero mode)
+        self.hero = None                 # active HeroState (Aussie Rules Hero mode)
         self.hero_unlocked = 1           # how many hero levels are playable (flat,
                                           # across every league — see hero_levels.py)
         self.hero_league_index = 0       # which league SCREEN_HERO is currently
@@ -169,7 +169,7 @@ class GameState:
         # full); a scoring attempt is also exempt (its own goal/behind/
         # miss resolution already owns the boundary near the goal line).
         self._in_flight_kick = None
-        # Both classic modes share AFL Hero's diorama presentation, but use
+        # Both classic modes share Aussie Rules Hero's diorama presentation, but use
         # their own camera tuning (settings.MAIN_CAM_*) for a slightly more
         # vertical, more fixed "broadcast" feel that differs from Hero mode.
         self.camera = HeroCamera(
@@ -231,7 +231,7 @@ class GameState:
             self._show_message(situation, duration=4.5)
 
     def start_hero(self, index):
-        """Begin one AFL Hero level (swipe-based possession puzzle)."""
+        """Begin one Aussie Rules Hero level (swipe-based possession puzzle)."""
         self.hero = HeroState(index)
         self.phase = PHASE_HERO
 

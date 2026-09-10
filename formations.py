@@ -9,7 +9,7 @@ import math
 import settings
 
 # ── FULL GAME formation ──────────────────────────────────────────────
-# Six standard AFL lines (16 on-field a side — interchange isn't modelled
+# Six standard Aussie Rules lines (16 on-field a side — interchange isn't modelled
 # yet; trimmed from 18 by dropping one slot each from centre/followers
 # below, part of the FULL GAME retune alongside settings.
 # FULL_GAME_PLAYER_SPEED / MAIN_SPRITE_SCALE / FIELD_MARGIN_*). Each line

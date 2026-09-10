@@ -1,6 +1,6 @@
 """render.py — all drawing, fully separated from game logic.
 
-Aesthetic (per reference image): a pastel-sage AFL oval bathed in hazy
+Aesthetic (per reference image): a pastel-sage Aussie Rules oval bathed in hazy
 diffuse light. Chibi pixel players with big dark mops of hair, physical
 scoreboards standing on legs at the top corners, dark rail fences along
 the top and bottom edges with puffy tree clusters and park benches, and
@@ -582,13 +582,13 @@ def _slowmo():
     return _slowmo_overlay
 
 
-# ── AFL HERO's NEW sticker ───────────────────────────────────────────
+# ── Aussie Rules HERO's NEW sticker ───────────────────────────────────────────
 
 _new_icon_surf = None
 
 
 def _new_icon():
-    """A tiny hard-edged pixel sticker flagging unseen AFL HERO
+    """A tiny hard-edged pixel sticker flagging unseen Aussie Rules HERO
     content — bold yellow badge, thick ink border, a flat offset
     shadow with no blur (unlike every other shadow in this project —
     see _soft_shadow — deliberately, for the "stuck-on sticker" read)
@@ -627,14 +627,14 @@ def _render_main_menu(display, game_state):
 
     display.blit(_dim(90), (0, 0))
 
-    title = font_big.render("AFL PROTOTYPE", True, cream)
+    title = font_big.render("Aussie Rules Prototype", True, cream)  
     display.blit(title, (settings.WINDOW_W // 2 - title.get_width() // 2, 140))
 
-    # Subtitle carries context on the two AFL HERO screens — which
+    # Subtitle carries context on the two Aussie Rules HERO screens — which
     # league you're browsing, or that you're picking one — same spot
     # the default tagline sits everywhere else.
     if game_state.menu_screen == SCREEN_HERO_LEAGUES:
-        sub_text = "AFL HERO - PICK YOUR LEAGUE"
+        sub_text = "Aussie Rules HERO - PICK YOUR LEAGUE"
     elif game_state.menu_screen == SCREEN_HERO:
         league = hero_levels.HERO_LEAGUES[game_state.hero_league_index]
         sub_text = f"{league['name']} · {league['tagline']}"
@@ -645,7 +645,7 @@ def _render_main_menu(display, game_state):
 
     # Options for the current screen (mirrors menu.menu_options). Each
     # entry is (name, locked, tagline, show_new_icon) — show_new_icon
-    # is only ever True on AFL HERO's two screens: a league's own row
+    # is only ever True on Aussie Rules HERO's two screens: a league's own row
     # on SCREEN_HERO_LEAGUES once it's freshly reachable but not yet
     # started (menu.hero_league_is_new), or SCREEN_HERO's BACK row
     # once the current league is fully cleared (menu.
@@ -756,7 +756,7 @@ def _render_flash(display, game_state):
 # ── Master compose ──────────────────────────────────────────────────
 
 def render(display, game_state):
-    """Render the main menu. FULL GAME / SCENARIOS / AFL HERO frames are
+    """Render the main menu. FULL GAME / SCENARIOS / Aussie Rules HERO frames are
     drawn by field_render.py and hero_render.py instead (see main.py's
     phase dispatch); this module supplies their shared display-resolution
     overlays (haze, vignette, slow-mo, controls menu, end screen)."""

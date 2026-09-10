@@ -201,7 +201,7 @@ def resolve_field_kick_launch(pressure, distance):
 def kick_scatter_error(pressure, distance):
     """Landing scatter radius for an inaccurate field kick — same shape
     as hero_kick_error, with its own settings constants so FULL GAME's
-    feel tunes independently from AFL Hero's."""
+    feel tunes independently from Aussie Rules Hero's."""
     dist_factor = min(distance / settings.KICK_MAX_RANGE, 1.0)
     return (settings.KICK_SCATTER_BASE
             + settings.KICK_SCATTER_DIST_FACTOR * dist_factor
@@ -343,7 +343,7 @@ def resolve_tackle(held_duration):
     return "holding_the_ball"
 
 
-# ── AFL Hero mode helpers (pure; used by hero_state) ────────────────
+# ── Aussie Rules Hero mode helpers (pure; used by hero_state) ────────────────
 # Hero outcomes resolve interactively (interception mid-flight, marks at
 # landing) rather than via the top-down _pending_outcome pattern, because
 # defenders keep moving while the ball is in the air.
@@ -453,7 +453,7 @@ def oval_ball_bounce(landing, travel_dir, rng=random):
     """Where an unmarked oval ball ends up after its unpredictable bounce.
 
     Mostly bounces on, roughly along the kick direction, but with real
-    sideways scatter — the AFL ball keeps nobody honest.
+    sideways scatter — the Aussie Rules ball keeps nobody honest.
     """
     dx, dy = travel_dir
     length = math.hypot(dx, dy) or 1.0
@@ -578,7 +578,7 @@ def resolve_scoring_attempt(kick_origin, target_point, goal_center=settings.GOAL
     a behind, and the worst rolls miss entirely.
 
     `goal_center` defaults to GOAL_RIGHT (every caller before this one
-    only ever shot that way — see AFL Hero's hero_state.py, which still
+    only ever shot that way — see Aussie Rules Hero's hero_state.py, which still
     doesn't pass one); game_state.py passes GOAL_LEFT for an AI carrier
     attacking the other way, so both teams' shots resolve symmetrically.
     """
