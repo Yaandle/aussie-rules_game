@@ -1,4 +1,4 @@
-# AFL Prototype
+# Aussie Rules Prototype
 
 A small, hand-rolled Aussie Rules football game built in Python and Pygame. No engine, no asset pipeline — every player, tree, and blade of grass is procedural pixel art drawn in code.
 
@@ -15,7 +15,7 @@ python main.py
 
 - **FULL GAME** — a 16-a-side match, one quarter, on the full oval. You control the ball carrier; the rest of both sides hold rough formation shape and lean into the contest around the ball. The AI opponent can score on you too — HOME/AWAY on the scoreboard both track for real.
 - **SCENARIOS** — seven designed possession moments, each with its own objective and clock. Five story missions: Centre Clearance, Hit the Lead, Break the Wing, Grand Final Moment, The Comeback. Plus two feature drills alongside them: Strip It Back (the opposition's got it — close in and win it back in a tackle contest) and Open Field Drill (no contests, no scoring, just a live 16-a-side field to move the ball around on — exit with Esc whenever you're done).
-- **AFL HERO** — a swipe-based possession puzzle mode: 30 hand-placed levels across six leagues of escalating difficulty — Juniors, Representative, Academy, Seniors, State, Country. Clear every level in a league and a small pixel sticker appears next to BACK — head there and the next league carries the same mark, waiting to be picked. Purely a flag, not a button of its own.
+- **Aussie Rules HERO** — a swipe-based possession puzzle mode: 30 hand-placed levels across six leagues of escalating difficulty — Juniors, Representative, Academy, Seniors, State, Country. Clear every level in a league and a small pixel sticker appears next to BACK — head there and the next league carries the same mark, waiting to be picked. Purely a flag, not a button of its own.
 - **GOAL KICKING** — a freeform practice range shot from a tight, first-person-ish camera. Walk the mark anywhere in a wide arc out from goal, read the wind, then time a two-stage power/accuracy meter to send the ball at the big sticks.
 - **CHARACTER MENU** — hit `C` from the main menu or mid-match to open it. Speed and Height are live-adjustable and actually affect play (Speed feeds FULL GAME's movement directly); the other six attributes are locked placeholders for a future upgrade system. Build a roster of named saved players, and choose per-save whether it's written to disk or kept for this session only.
 
@@ -35,7 +35,7 @@ An Xbox (XInput-style) controller works throughout — every menu, match action,
 | M / Esc | Open the controls menu |
 | Backspace (in menu) | Quit to main menu |
 
-**AFL Hero**
+**Aussie Rules Hero**
 
 | Input | Action |
 | --- | --- |
@@ -71,11 +71,11 @@ A handful of match rules sit on top of that resolution layer:
 - `entities.py` — `Player` and `Ball`, plain data holders
 - `mechanics.py` — pure probability/resolution logic: pressure, kicks, marks, contests, AI
 - `game_state.py` — `GameState`: FULL GAME / SCENARIOS state, phase machine, input, update loop
-- `hero_state.py` — `HeroState`: the AFL Hero swipe-puzzle mode
+- `hero_state.py` — `HeroState`: the Aussie Rules Hero swipe-puzzle mode
 - `goalkick_state.py` — `GoalKickState`: the GOAL KICKING practice range
 - `render.py` — shared drawing: the player sprite, field background, menus, HUD chrome
 - `field_render.py` — diorama renderer for FULL GAME / SCENARIOS
-- `hero_render.py` — diorama renderer for AFL Hero
+- `hero_render.py` — diorama renderer for Aussie Rules Hero
 - `goalkick_render.py` — first-person-ish renderer for GOAL KICKING
 - `hero_camera.py` — the shared pinhole projection camera
 - `levels.py` / `hero_levels.py` — scenario and Hero level data

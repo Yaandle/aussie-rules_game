@@ -1,8 +1,8 @@
-"""levels.py — scenario missions (the AFL Hero layer).
+"""levels.py — scenario missions (the Aussie Rules Hero layer).
 
-Each scenario recreates a specific match situation — a quarter, a score
-context, a clock, one objective — rather than an abstract puzzle. That's
-the difference from AFL HERO's levels (hero_levels.py): those are
+    Each scenario recreates a specific match situation — a quarter, a score
+    context, a clock, one objective — rather than an abstract puzzle. That's
+    the difference from Aussie Rules HERO's levels (hero_levels.py): those are
 swipe-mechanic puzzles with their own controls; these play with FULL
 GAME's exact controls/mechanics, just dropped into a designed moment
 with the drama of a real broadcast (see `quarter`/`situation`/

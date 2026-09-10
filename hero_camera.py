@@ -1,4 +1,4 @@
-"""hero_camera.py — pure projection math for the AFL Hero diorama camera.
+"""hero_camera.py — pure projection math for the Aussie Rules Hero diorama camera.
 
 No Pygame, no drawing, no game rules: a pinhole camera standing on the
 southern boundary, slightly above head height, looking north across the
@@ -21,7 +21,7 @@ import settings
 class HeroCamera:
     """Smoothed follow-camera with project/unproject onto the ground plane.
 
-    Defaults match the AFL Hero diorama camera. FULL GAME / SCENARIOS pass
+    Defaults match the Aussie Rules Hero diorama camera. FULL GAME / SCENARIOS pass
     their own `settings.MAIN_CAM_*` values (see game_state.py) to get a
     slightly more vertical, more fixed "broadcast" feel without touching
     Hero mode at all.

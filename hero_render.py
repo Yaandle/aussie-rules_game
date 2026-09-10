@@ -1,4 +1,4 @@
-"""hero_render.py — all drawing for AFL Hero mode. Never mutates state.
+"""hero_render.py — all drawing for Aussie Rules Hero mode. Never mutates state.
 
 The same pastel-sage world as the top-down game, seen from the southern
 boundary: a pinhole camera (hero_camera.HeroCamera) projects the ground
@@ -482,7 +482,7 @@ def _render_hud(display, state):
 def _render_controls(display):
     """Controls overlay: dims the paused level, lists the swipe bindings.
 
-    AFL Hero's core mechanic (drawing a run/handball/kick) is mouse-drag
+    Aussie Rules Hero's core mechanic (drawing a run/handball/kick) is mouse-drag
     only — no controller equivalent exists for it, so those rows are
     left as-is even with a pad connected. Only the two rows that do have
     a real controller binding (ESC, M — see controller.py's B/Start
@@ -557,7 +557,7 @@ def _render_done(display, state):
 # ── Master compose ──────────────────────────────────────────────────
 
 def render_hero(display, state):
-    """One AFL Hero frame: diorama scene, entities, previews, HUD."""
+    """One Aussie Rules Hero frame: diorama scene, entities, previews, HUD."""
     cam = state.camera
 
     _render_ground(display, cam)

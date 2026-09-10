@@ -21,7 +21,7 @@ def main():
     pygame.init()
     pygame.display.set_icon(render.window_icon())
     display = pygame.display.set_mode((settings.WINDOW_W, settings.WINDOW_H))
-    pygame.display.set_caption("AFL Prototype")
+    pygame.display.set_caption("Aussie Rules Prototype")
     clock = pygame.time.Clock()
     controller.init()
 

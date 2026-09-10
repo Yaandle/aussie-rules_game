@@ -1,4 +1,4 @@
-"""settings.py — all tunable constants for the AFL prototype.
+"""settings.py — all tunable constants for the Aussie Rules prototype.
 
 No logic lives here. Every other module imports from this file so the
 whole game can be re-balanced or re-themed from one place.
@@ -57,7 +57,7 @@ FPS       = 60
 # quiet band of surrounds — players read smaller against more open grass.
 # Margins trimmed slightly (from 20/14) to grow the oval a bit, compensating
 # for FULL GAME's 16-a-side roster (see game_state.FORMATION_LINES) without
-# touching LOGICAL_W/H/WINDOW_W/H or any camera rig. Scenarios/AFL HERO use
+# touching LOGICAL_W/H/WINDOW_W/H or any camera rig. Scenarios/Aussie Rules HERO use
 # literal hand-placed coordinates (levels.py/hero_levels.py), so the bigger
 # oval reads as a modest cosmetic change there, not a functional one.
 FIELD_MARGIN_X = 17
@@ -317,7 +317,7 @@ POST_TACKLE_COOLDOWN = 1.0      # seconds after ANY tackle resolution (broken or
                                   # broken tackle doesn't instantly re-trigger
 
 # ── Out of bounds ──────────────────────────────────────────────────────
-# Two distinct AFL rulings, both detected on the ball rather than on any
+# Two distinct Aussie Rules rulings, both detected on the ball rather than on any
 # player (players are already clamped inside the oval — see Player.move —
 # so only the ball, in flight or resting after a missed kick, can
 # actually leave it):
@@ -335,7 +335,7 @@ OOB_BOUNDARY_INSET = 2.0   # matches the inset mechanics.clamp_to_oval/Player.mo
                              # named constant here so the OOB check reads the
                              # exact same boundary every other clamp already does
 
-# ── AFL Hero mode: camera (field-level diorama view) ────────────────
+# ── Aussie Rules Hero mode: camera (field-level diorama view) ────────────────
 HERO_CAM_BACK   = 46.0   # camera ground distance behind the focus point
 HERO_CAM_HEIGHT = 24.0   # camera height above the turf (field units)
 HERO_CAM_FOCAL  = 520.0  # pinhole focal length in display pixels
@@ -345,7 +345,7 @@ HERO_HORIZON_Y  = 0.40   # screen-height fraction where the look-at point sits
 HERO_SPRITE_SCALE = 1.15 # world-size multiplier for billboarded sprites
 
 # ── FULL GAME / SCENARIOS: camera (broadcast-style, distinct from Hero) ──
-# Same rig as AFL Hero's, tuned slightly differently so the two modes read
+# Same rig as Aussie Rules Hero's, tuned slightly differently so the two modes read
 # as different views: a touch higher/steeper (more vertical), slower to
 # ease toward the play (reads as more fixed), and a little further back
 # (mildly zoomed out) to keep more of the field in frame.
@@ -365,7 +365,7 @@ MAIN_HORIZON_Y  = 0.40   # unchanged
 # just a lower body count.
 MAIN_SPRITE_SCALE = 0.65
 
-# ── AFL Hero mode: decision & swipe tuning ──────────────────────────
+# ── Aussie Rules Hero mode: decision & swipe tuning ──────────────────────────
 HERO_SLOWMO       = 0.12  # deep time dilation while deciding
 HERO_GRAB_RADIUS  = 10.0  # a drag must begin this close to the carrier
 HERO_PATH_MAX     = 60.0  # max drawn run-path length
@@ -375,7 +375,7 @@ HERO_KICK_MAX     = 95.0  # drawn kicks cap at this distance
 HERO_CURVE_MAX    = 14.0  # max lateral curve carried over from swipe bend
 HERO_TACKLE_RADIUS = 2.5  # defender this close to a running carrier tackles
 
-# ── AFL Hero mode: flight, marking, interception ────────────────────
+# ── Aussie Rules Hero mode: flight, marking, interception ────────────────────
 HERO_FLIGHT_SPEED     = 85.0  # kick travel speed (slower = higher arcs)
 HERO_MARK_RADIUS      = 10.0  # teammate this close to the drop takes the mark
 HERO_INTERCEPT_RADIUS = 12.0  # defenders this close to the drop converge on it
