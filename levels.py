@@ -20,7 +20,7 @@ Objectives:
 Coordinates are logical grid units; YELLOW always attacks the right
 goal. Each scenario hand-places a few "featured" positions — the actual
 puzzle — first in its yellow/red list, then `_padded()` fills the rest
-of a proper 16-a-side roster around them with a generic AFL-shaped
+of a proper 16-a-side roster around them with a generic Aussie Rules-shaped
 formation, purely for a realistic on-field look; only the featured
 players (and, for RED, whichever couple end up closest to the carrier —
 see mechanics.update_defenders' MAX_CHASERS) ever do anything.
@@ -44,7 +44,7 @@ import settings
 
 
 def _formation_slots(attack_positive):
-    """A generic 16-a-side AFL-shaped base layout (six lines, same shape
+    """A generic 16-a-side Aussie Rules-shaped base layout (six lines, same shape
     as game_state.FORMATION_LINES) — only used to pad a scenario's few
     hand-placed "featured" positions out to a full roster."""
     lines = (
