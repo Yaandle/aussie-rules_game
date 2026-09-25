@@ -13,6 +13,7 @@ static scene is built once and cached.
 """
 
 import math
+import os
 import random
 
 import pygame
@@ -413,6 +414,24 @@ def _background():
     return _bg_scaled
 
 
+_menu_wallpaper = None
+
+
+def _menu_wallpaper_surface():
+    """Cached menu wallpaper loaded from the dedicated assets folder."""
+    global _menu_wallpaper
+    if _menu_wallpaper is None:
+        path = os.path.join(os.path.dirname(__file__), "assets", "menuwallpaper1.jpg")
+        try:
+            image = pygame.image.load(path)
+        except (FileNotFoundError, pygame.error):
+            return None
+        if image.get_size() != (settings.WINDOW_W, settings.WINDOW_H):
+            image = pygame.transform.smoothscale(image, (settings.WINDOW_W, settings.WINDOW_H))
+        _menu_wallpaper = image.convert()
+    return _menu_wallpaper
+
+
 # ── Dynamic entities (logical resolution, redrawn per frame) ────────
 
 # Sprite variants: a small, deterministic mix of hairstyle x build x idle
@@ -625,6 +644,11 @@ def _render_main_menu(display, game_state):
     cream = pygame.Color(settings.CREAM)
     muted = pygame.Color(settings.MUTED)
 
+    wallpaper = _menu_wallpaper_surface()
+    if wallpaper is not None:
+        display.blit(wallpaper, (0, 0))
+    else:
+        display.blit(_background(), (0, 0))
     display.blit(_dim(90), (0, 0))
 
     title = font_big.render("Aussie Rules Prototype", True, cream)  

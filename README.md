@@ -83,23 +83,23 @@ A handful of match rules sit on top of that resolution layer:
 
 ## Look & feel
 
-A pastel-sage oval under hazy diffuse light: chibi pixel players with oversized mops of hair, physical scoreboards standing on legs, dark rail fences, puffy trees, and a low broadcast-style camera looking in across the ground. Everything is built from small logical surfaces upscaled with nearest-neighbor scaling — no external image assets, ever.
+A pastel-sage oval under hazy diffuse light: chibi pixel players with oversized mops of hair, physical scoreboards standing on legs, dark rail fences, puffy trees, and a low broadcast-style camera looking in across the ground. Everything is built from small logical surfaces upscaled with nearest-neighbor scaling, with decorative wallpaper assets stored under `assets/` for the menu screens.
 
 
 ## Main Menu
 
-![Main Menu](./mainmenu.png)
+![Main Menu](./assets/mainmenu.png)
 
 ## Character Menu
-![Character Menu](./charactermenu.png)
+![Character Menu](./assets/charactermenu.png)
 
 ## Goal Kicking
 
-![Goal Kicking](./goalkicking.png)
+![Goal Kicking](./assets/goalkicking.png)
 
 ## Full Game
 
-![Full Game](./fullgame.png)
+![Full Game](./assets/fullgame.png)
 
 ## License
 

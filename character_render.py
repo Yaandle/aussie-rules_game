@@ -10,6 +10,8 @@ visual language, no new art, procedural pixel art only like everywhere
 else in this project.
 """
 
+import os
+
 import pygame
 
 import character_state
@@ -22,16 +24,42 @@ ROW_H = 34
 GROUP_GAP = 16
 BAR_W = 110   # fillable stat-meter rectangle, right-aligned on a stat row
 BAR_H = 14
+PORTRAIT_Y_OFFSET = 64
+PORTRAIT_X_OFFSET = 26
+
+_character_bg = None
+
+
+def _character_background_surface():
+    """Cached custom character menu background, with a procedural fallback."""
+    global _character_bg
+    if _character_bg is None:
+        candidates = (
+            "charactermenubg.jpg",
+        )
+        for filename in candidates:
+            path = os.path.join(os.path.dirname(__file__), "assets", filename)
+            try:
+                image = pygame.image.load(path)
+            except (FileNotFoundError, pygame.error):
+                continue
+            if image.get_size() != (settings.WINDOW_W, settings.WINDOW_H):
+                image = pygame.transform.smoothscale(image, (settings.WINDOW_W, settings.WINDOW_H))
+            _character_bg = image.convert()
+            return _character_bg
+        return None
+    return _character_bg
 
 
 # ── Scene: ground + a single standing portrait ──────────────────────
 
-def _render_scene(display, state):
+def _render_scene(display, state, include_ground=True):
     """Ground (hero_render's shared routine) plus one player, centered,
     facing the camera — the existing sprite is already a front-facing
     billboard, so this just scales it up for a close-up read."""
     cam = state.camera
-    hero_render._render_ground(display, cam)
+    if include_ground:
+        hero_render._render_ground(display, cam)
 
     proj = cam.project(settings.FIELD_CX, settings.FIELD_CY, 0.0)
     if proj is None:
@@ -58,9 +86,10 @@ def _render_scene(display, state):
     # as a static cardboard cutout.
     bob = int(1 + k * 0.15) * ((pygame.time.get_ticks() // 900) % 2)
 
-    display.blit(shadow, (int(sx) - shadow.get_width() // 2,
-                          int(sy) - shadow.get_height() // 2))
-    display.blit(sprite, (int(sx) - w // 2, int(sy) - h - bob))
+    display.blit(shadow, (int(sx) - shadow.get_width() // 2 + PORTRAIT_X_OFFSET,
+                          int(sy) - shadow.get_height() // 2 + PORTRAIT_Y_OFFSET))
+    display.blit(sprite, (int(sx) - w // 2 + PORTRAIT_X_OFFSET,
+                          int(sy) - h - bob + PORTRAIT_Y_OFFSET))
 
 
 # ── Shared panel chrome ──────────────────────────────────────────────
@@ -300,7 +329,12 @@ def render_character(display, state):
     if state is None:
         return
 
-    _render_scene(display, state)
+    bg = _character_background_surface()
+    if bg is not None:
+        display.blit(bg, (0, 0))
+        _render_scene(display, state, include_ground=False)
+    else:
+        _render_scene(display, state)
     display.blit(render._haze(), (0, 0))
     display.blit(render._build_vignette(), (0, 0))
 
