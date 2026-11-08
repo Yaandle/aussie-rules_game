@@ -93,6 +93,11 @@ A pastel-sage oval under hazy diffuse light: chibi pixel players with oversized 
 ## Character Menu
 ![Character Menu](./assets/charactermenu.png)
 
+## Aussie Rules Hero
+
+![Aussie Rules Hero](./assets/heromodemenu.png)
+
+
 ## Goal Kicking
 
 ![Goal Kicking](./assets/goalkicking.png)
